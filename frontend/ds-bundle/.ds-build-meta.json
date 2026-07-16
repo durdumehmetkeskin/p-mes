@@ -1,0 +1,9 @@
+{
+  "namespace": "PmesUI",
+  "source": "frontend@0.1.0",
+  "shape": "package",
+  "provider": null,
+  "componentCount": 47,
+  "skippedStoryIds": [],
+  "runtimeFontPrefixes": []
+}

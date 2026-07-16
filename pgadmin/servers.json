@@ -1,0 +1,13 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "p-mes",
+      "Group": "Servers",
+      "Host": "db",
+      "Port": 5432,
+      "MaintenanceDB": "p_mes",
+      "Username": "postgres",
+      "SSLMode": "prefer"
+    }
+  }
+}

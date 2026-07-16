@@ -1,0 +1,157 @@
+name: p-mes
+
+services:
+  db:
+    image: postgres:18-alpine
+    container_name: p-mes-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-p_mes}
+    ports:
+      - '127.0.0.1:${DB_PORT:-5432}:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${DB_USERNAME:-postgres}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: p-mes-pgadmin
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      # Single-user desktop mode: skip the login screen and master password.
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
+    ports:
+      # Loopback only: pgAdmin runs with its login screen disabled.
+      - '127.0.0.1:${PGADMIN_PORT:-5050}:80'
+    volumes:
+      - pgadmin:/var/lib/pgadmin
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+
+  minio:
+    image: minio/minio:latest
+    container_name: p-mes-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    ports:
+      - '127.0.0.1:${MINIO_PORT:-9000}:9000'
+      - '127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001'
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+    container_name: p-mes-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    environment:
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: 'false'
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-p-mes}
+      NODE_ENV: production
+      PORT: 3000
+      API_PREFIX: api
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-p_mes}
+      JWT_SECRET: ${JWT_SECRET:-dev-only-insecure-secret-change-me-32chars!!}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
+      REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-7}
+      PASSWORD_RESET_TTL_MINUTES: ${PASSWORD_RESET_TTL_MINUTES:-60}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
+      # Public SPA base URL baked into QR-code deep links; after changing it,
+      # recreate: docker compose up -d backend
+      APP_URL: ${APP_URL:-http://localhost:5173}
+      # Seeded on startup by the entrypoint (idempotent).
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_NAME: ${ADMIN_NAME:-Administrator}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-ChangeMe_Admin123}
+    ports:
+      - '127.0.0.1:${BACKEND_PORT:-3000}:3000'
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.http.routers.backend.rule=PathPrefix(`/api`) || PathPrefix(`/docs`)'
+      - 'traefik.http.routers.backend.entrypoints=web'
+      - 'traefik.http.routers.backend.priority=100'
+      - 'traefik.http.routers.backend.middlewares=api-ratelimit,sec-headers'
+      - 'traefik.http.services.backend.loadbalancer.server.port=3000'
+      - 'traefik.http.middlewares.api-ratelimit.ratelimit.average=50'
+      - 'traefik.http.middlewares.api-ratelimit.ratelimit.burst=100'
+      - 'traefik.http.middlewares.sec-headers.headers.contenttypenosniff=true'
+      - 'traefik.http.middlewares.sec-headers.headers.framedeny=true'
+      - 'traefik.http.middlewares.sec-headers.headers.referrerpolicy=no-referrer'
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3000/api}
+    container_name: p-mes-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      # Direct access has broken API calls when VITE_API_URL is relative;
+      # local usage goes through Traefik at http://localhost instead.
+      - '127.0.0.1:${FRONTEND_PORT:-5173}:3000'
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.http.routers.frontend.rule=PathPrefix(`/`)'
+      - 'traefik.http.routers.frontend.entrypoints=web'
+      - 'traefik.http.routers.frontend.priority=1'
+      - 'traefik.http.routers.frontend.middlewares=sec-headers'
+      - 'traefik.http.services.frontend.loadbalancer.server.port=3000'
+
+  traefik:
+    image: traefik:v3.4
+    container_name: p-mes-traefik
+    restart: unless-stopped
+    command:
+      - '--providers.docker=true'
+      - '--providers.docker.exposedbydefault=false'
+      - '--entrypoints.web.address=:80'
+      - '--api.dashboard=false'
+      - '--log.level=INFO'
+      - '--accesslog=true'
+    ports:
+      # Override TRAEFIK_HTTP_PORT if 80 is already taken on the host.
+      - '127.0.0.1:${TRAEFIK_HTTP_PORT:-80}:80'
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - backend
+      - frontend
+
+volumes:
+  pgdata:
+  pgadmin:
+  miniodata:

@@ -1,0 +1,232 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans: "Inter", sans-serif;
+}
+
+:root {
+  --radius: 0.375rem;
+  --success: oklch(0.72 0.15 162);
+  --success-foreground: oklch(0.16 0.03 165);
+  --warning: oklch(0.8 0.12 62);
+  --warning-foreground: oklch(0.28 0.08 55);
+  --info: oklch(0.6 0.13 262);
+  --info-foreground: oklch(0.98 0 0);
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+/* "Precision Industrial System" — dark control-room palette (the app runs dark-only). */
+.dark {
+  --background: #0b1326;
+  --foreground: #dae2fd;
+  --card: #171f33;
+  --card-foreground: #dae2fd;
+  --popover: #222a3d;
+  --popover-foreground: #dae2fd;
+  --primary: #adc6ff;
+  --primary-foreground: #002e6a;
+  --secondary: #3a4a5f;
+  --secondary-foreground: #dae2fd;
+  --muted: #222a3d;
+  --muted-foreground: #9ba1b4;
+  --accent: #2d3449;
+  --accent-foreground: #dae2fd;
+  --destructive: #d64b47;
+  --border: #2a3247;
+  --input: #424754;
+  --ring: #adc6ff;
+  --success: #34d399;
+  --success-foreground: #06281c;
+  --warning: #ffb786;
+  --warning-foreground: #502400;
+  --info: #adc6ff;
+  --info-foreground: #002e6a;
+  --chart-1: #adc6ff;
+  --chart-2: #34d399;
+  --chart-3: #ffb786;
+  --chart-4: #b7c8e1;
+  --chart-5: #ffb4ab;
+  --sidebar: #0b1326;
+  --sidebar-foreground: #c2c6d6;
+  --sidebar-primary: #1e2a44;
+  --sidebar-primary-foreground: #adc6ff;
+  --sidebar-accent: #171f33;
+  --sidebar-accent-foreground: #dae2fd;
+  --sidebar-border: #2a3247;
+  --sidebar-ring: #adc6ff;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50 antialiased;
+    font-family: var(--font-sans);
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Industrial "control-room" chrome: thin technical scrollbars + a subtle dotted canvas.
+   Numeric/telemetry values use `.font-mono` (JetBrains Mono) with tabular figures. */
+@layer utilities {
+  .font-mono {
+    font-feature-settings: "tnum" 1;
+    letter-spacing: -0.01em;
+  }
+  .data-grid-dots {
+    background-image: radial-gradient(var(--border) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--input) transparent;
+}
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--input);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+
+/* gantt-task-react re-theme (section reservation Gantt). The library ships a
+   fixed light stylesheet with hashed-but-stable class names (pinned to
+   gantt-task-react@0.3.9 — re-check these selectors if the package is ever
+   upgraded). Scoped under .section-gantt so nothing else is affected. */
+.section-gantt {
+  color: var(--card-foreground);
+  font-family: var(--font-sans);
+  /* the library's scrollbar thumbs read these */
+  --palette-black-alpha-20: rgba(255, 255, 255, 0.15);
+  --palette-black-alpha-30: rgba(255, 255, 255, 0.25);
+}
+/* task-list (left table): header + body borders, zebra rows, expander */
+.section-gantt ._3_ygE,
+.section-gantt ._3ZbQT {
+  border-color: var(--border);
+}
+.section-gantt ._2eZzQ {
+  border-right-color: var(--border);
+}
+.section-gantt ._34SS0:nth-of-type(even) {
+  background-color: var(--muted);
+}
+.section-gantt ._2QjE6 {
+  color: var(--muted-foreground);
+}
+/* chart grid: row fills, row lines, column ticks */
+.section-gantt ._2dZTy {
+  fill: var(--card);
+}
+.section-gantt ._2dZTy:nth-child(even) {
+  fill: var(--muted);
+}
+.section-gantt ._3rUKi,
+.section-gantt ._RuwuK,
+.section-gantt ._1rLuZ {
+  stroke: var(--border);
+}
+/* calendar header: rect + month/day texts */
+.section-gantt ._35nLX {
+  fill: var(--muted);
+  stroke: var(--border);
+}
+.section-gantt ._9w8d5 {
+  fill: var(--card-foreground);
+}
+.section-gantt ._2q1Kt {
+  fill: var(--muted-foreground);
+}
+/* bar labels rendered outside a too-narrow bar + resize handles */
+.section-gantt ._3KcaM {
+  fill: var(--card-foreground);
+}
+.section-gantt ._3w_5u {
+  fill: var(--muted-foreground);
+}
