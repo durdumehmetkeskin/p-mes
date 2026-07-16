@@ -92,9 +92,16 @@ log "Backend hazır (migrations + seed otomatik uygulandı)."
 log "nginx konfigürasyonları kuruluyor..."
 install -m 644 deploy/nginx/quanta-mes-ratelimit.conf /etc/nginx/conf.d/quanta-mes-ratelimit.conf
 # Cloudflare arkasında gerçek istemci IP'sini geri kazan (rate limit + loglar
-# ziyaretçi IP'sine göre işlesin). Sunucuda zaten CF real-ip tanımlıysa ve
-# nginx -t "duplicate" hatası verirse bu dosyayı silmeniz yeterli.
-install -m 644 deploy/nginx/quanta-mes-cloudflare-realip.conf /etc/nginx/conf.d/quanta-mes-cloudflare-realip.conf
+# ziyaretçi IP'sine göre işlesin). Sunucuda ZATEN bir real_ip_header tanımı
+# varsa (başka bir site kurmuş olabilir) dosyayı EKLEME — nginx duplicate
+# yönergeyi reddeder; mevcut tanım bizim vhost'lara da etki eder.
+if grep -rqs "real_ip_header" /etc/nginx/conf.d/ /etc/nginx/nginx.conf \
+     --exclude="quanta-mes-cloudflare-realip.conf"; then
+  log "Mevcut real_ip_header tanımı bulundu — quanta-mes-cloudflare-realip.conf atlanıyor."
+  rm -f /etc/nginx/conf.d/quanta-mes-cloudflare-realip.conf
+else
+  install -m 644 deploy/nginx/quanta-mes-cloudflare-realip.conf /etc/nginx/conf.d/quanta-mes-cloudflare-realip.conf
+fi
 for d in "$API_DOMAIN" "$APP_DOMAIN"; do
   install -m 644 "deploy/nginx/${d}.conf" "/etc/nginx/sites-available/${d}.conf"
   ln -sf "/etc/nginx/sites-available/${d}.conf" "/etc/nginx/sites-enabled/${d}.conf"
