@@ -51,12 +51,18 @@ if ! command -v nginx >/dev/null; then
 fi
 
 # --- 2. port safety ----------------------------------------------------------
+# Re-runs are fine: a port held by OUR OWN quanta-mes containers is not a
+# conflict (compose just recreates them).
 for p in $BACKEND_PORT $FRONTEND_PORT; do
   if ss -ltn "sport = :$p" | grep -q LISTEN; then
-    fail "Port $p kullanımda — .env.prod'da BACKEND_HOST_PORT/FRONTEND_HOST_PORT'u ve nginx conf'larını birlikte değiştirin."
+    if docker ps --format '{{.Names}} {{.Ports}}' | grep -Eq "^quanta-mes-.*:${p}->"; then
+      log "Port $p zaten quanta-mes stack'i tarafından kullanılıyor — devam."
+    else
+      fail "Port $p BAŞKA bir servis tarafından kullanımda — .env.prod'da BACKEND_HOST_PORT/FRONTEND_HOST_PORT'u ve nginx conf'larını birlikte değiştirin."
+    fi
   fi
 done
-log "Loopback portları boş: $BACKEND_PORT (api), $FRONTEND_PORT (frontend)."
+log "Loopback portları hazır: $BACKEND_PORT (api), $FRONTEND_PORT (frontend)."
 
 # --- 3. .env.prod ------------------------------------------------------------
 if [[ ! -f .env.prod ]]; then
