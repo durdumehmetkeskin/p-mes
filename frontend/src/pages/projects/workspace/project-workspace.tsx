@@ -6,9 +6,7 @@ import {
   Contact,
   GanttChartSquare,
   Info,
-  ListTree,
   Paperclip,
-  Tags,
   UserCog,
   Workflow as WorkflowIcon,
 } from "lucide-react";
@@ -17,6 +15,7 @@ import { Link, NavLink, Outlet, useParams } from "react-router";
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useCanEditProject } from "@/hooks/use-can-edit-project";
 import { cn } from "@/lib/utils";
 
 export interface ProjectContext {
@@ -29,6 +28,7 @@ interface ProjectRecord {
   code: string;
   name: string;
   customerCompanyId: string | null;
+  managerUserId: string | null;
 }
 
 const NAV: Array<{ to: string; label: string; icon: ReactNode; end?: boolean }> = [
@@ -42,16 +42,6 @@ const NAV: Array<{ to: string; label: string; icon: ReactNode; end?: boolean }> 
   { to: "customer", label: "Customer", icon: <Building2 className="h-4 w-4" /> },
   { to: "contacts", label: "Contacts", icon: <Contact className="h-4 w-4" /> },
   { to: "employees", label: "Team", icon: <UserCog className="h-4 w-4" /> },
-  {
-    to: "categories",
-    label: "Categories",
-    icon: <Tags className="h-4 w-4" />,
-  },
-  {
-    to: "stage-types",
-    label: "Stage Types",
-    icon: <ListTree className="h-4 w-4" />,
-  },
   {
     to: "workflow",
     label: "Workflow",
@@ -78,6 +68,14 @@ export const ProjectWorkspace = () => {
   // resolve an empty resource and request /api//:id (404).
   const { query } = useShow<ProjectRecord>({ resource: "projects", id });
   const project = query.data?.data;
+  const canEditProject = useCanEditProject();
+  // The Customer, Contacts and Workflow sections are visible ONLY to admins
+  // and the project's manager (backend serves them manager-only too).
+  const managerOnlyNav = new Set(["customer", "contacts", "workflow"]);
+  const isManagerish = project ? canEditProject(project.managerUserId) : false;
+  const navItems = NAV.filter(
+    (item) => !managerOnlyNav.has(item.to) || isManagerish,
+  );
 
   const context: ProjectContext = {
     projectId: id ?? "",
@@ -99,7 +97,8 @@ export const ProjectWorkspace = () => {
             <Skeleton className="h-6 w-48" />
           )}
         </div>
-        {project && (
+        {/* Editing a project is reserved to admins and its manager. */}
+        {project && canEditProject(project.managerUserId) && (
           <Button asChild variant="outline" size="sm">
             <Link to={`/projects/${id}/edit`}>Edit project</Link>
           </Button>
@@ -109,7 +108,7 @@ export const ProjectWorkspace = () => {
       <div className="flex gap-6">
         <aside className="w-52 shrink-0">
           <nav className="flex flex-col gap-1">
-            {NAV.map((item) => (
+            {navItems.map((item) => (
               <NavLink
                 key={item.label}
                 to={item.to}

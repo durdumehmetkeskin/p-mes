@@ -3,7 +3,6 @@ import { eachDayOfInterval, format, isSameDay, parseISO } from "date-fns";
 import { Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import { Can } from "@/components/can";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -59,10 +58,14 @@ export function StageReservation({
   orderId,
   windowStart,
   windowEnd,
+  canManage = false,
   onChanged,
 }: {
   stageId: string;
   orderId: string;
+  /** Process responsible or admin — may also remove reservations without
+   *  the section-reservations:delete key (backend mirrors). */
+  canManage?: boolean;
   /** Stage date window (actuals falling back to estimates). When defined,
    *  the reservation must lie inside it (backend enforces too). */
   windowStart?: string | null;
@@ -103,11 +106,14 @@ export function StageReservation({
   const mine = mineRes?.data ?? [];
 
   // Existing reservations for the chosen section (availability awareness).
+  // Only once a section is picked — an empty sectionId would 400 (uuid).
   const { result: existing, query: existingQuery } = useList<ReservationRow>({
     resource: "section-reservations",
     filters: [{ field: "sectionId", operator: "eq", value: sectionId }],
     sorters: [{ field: "startDate", order: "asc" }],
     pagination: { mode: "off" },
+    queryOptions: { enabled: Boolean(sectionId), retry: false },
+    errorNotification: false,
   });
   const taken = existing?.data ?? [];
 
@@ -226,7 +232,7 @@ export function StageReservation({
                 {fmtWall(r.startAt, r.startDate)} →{" "}
                 {fmtWall(r.endAt, r.endDate)}
               </span>
-              <Can perm="section-reservations:delete">
+              {canManage && (
                 <Button
                   size="icon"
                   variant="ghost"
@@ -235,7 +241,7 @@ export function StageReservation({
                 >
                   <Trash2 className="h-3.5 w-3.5 text-destructive" />
                 </Button>
-              </Can>
+              )}
             </li>
           ))}
         </ul>

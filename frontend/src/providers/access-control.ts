@@ -12,6 +12,12 @@ const RESOURCE_ALIAS: Record<string, string> = {
   "report-definitions": "reports",
 };
 
+// LIST pages visible ONLY to admins even though everyone holds the read key —
+// tools:read exists for the embedded pickers/StageTools panels and the tool
+// detail page (warehouse responsibles operate tools from My Warehouse), not to
+// browse the standalone Tools list.
+const ADMIN_ONLY_LISTS = new Set(["tools"]);
+
 export interface AccessState {
   perms: Set<string>;
   keys: Set<string>;
@@ -72,13 +78,15 @@ export function getAccessState(): Promise<AccessState> {
 export function canAccessResource(
   state: AccessState,
   resource?: string,
+  action = "list",
 ): boolean {
   if (!resource) return true;
   if (state.isAdmin) return true;
+  if (ADMIN_ONLY_LISTS.has(resource) && action === "list") return false;
   if (resource === "my-warehouse") {
     return state.responsibleWarehouseIds.length > 0;
   }
-  const key = requiredKey(resource, "list");
+  const key = requiredKey(resource, action);
   if (!state.keys.has(key)) return true;
   return state.perms.has(key);
 }
@@ -125,6 +133,10 @@ export const accessControlProvider: AccessControlProvider = {
       if (resource === "my-warehouse") {
         const { isAdmin, responsibleWarehouseIds } = await load();
         return { can: isAdmin || responsibleWarehouseIds.length > 0 };
+      }
+      if (ADMIN_ONLY_LISTS.has(resource) && (action === "list" || !action)) {
+        const { isAdmin } = await load();
+        if (!isAdmin) return { can: false };
       }
       const key = requiredKey(resource, action);
       const { perms, keys } = await load();

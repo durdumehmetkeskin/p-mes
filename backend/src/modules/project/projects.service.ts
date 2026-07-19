@@ -1,12 +1,14 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Like, Repository } from 'typeorm';
 import { Contact } from '../customers/entities/contact.entity';
+import { Customer } from '../customers/entities/customer.entity';
 import { Lot } from '../inventory/entities/lot.entity';
 import { Zone } from '../inventory/entities/zone.entity';
 import { Tool } from '../tooling/entities/tool.entity';
@@ -232,11 +234,24 @@ export class ProjectsService {
     dto: UpdateProjectDto,
     user?: User,
   ): Promise<Project> {
-    // Scope (404 for non-admin non-members), then column-level update so the
-    // eager manager/customer/contact relations never re-write a cleared FK.
-    const before = user
-      ? await this.findOneForUser(id, user)
-      : await this.findOne(id);
+    // Editing the project itself is reserved to admins and its manager (the
+    // manager need not be a team member). Non-member outsiders still get a
+    // 404 (never leak existence); members without manager rights get a 403.
+    const before = await this.findOne(id);
+    if (
+      user &&
+      !ProjectsService.isAdmin(user) &&
+      user.id !== before.managerUserId
+    ) {
+      if (!(await this.isMember(id, user.id))) {
+        throw new NotFoundException(`Project ${id} not found`);
+      }
+      throw new ForbiddenException(
+        'Only an admin or the project manager may edit this project',
+      );
+    }
+    // Column-level update below so the eager manager/customer/contact
+    // relations never re-write a cleared FK.
     // code is server-generated and immutable — drop any sent value.
     const { code: _code, ...rest } = dto;
     if (Object.keys(rest).length > 0) {
@@ -366,7 +381,13 @@ export class ProjectsService {
   }
 
   /** Contacts attached to the project. */
-  async listContacts(projectId: string): Promise<ProjectContact[]> {
+  async listContacts(
+    projectId: string,
+    user?: User,
+  ): Promise<ProjectContact[]> {
+    // Reads are manager/admin-only too; internal callers (addContact /
+    // removeContact return values) pass no user — they already checked.
+    if (user) await this.assertCustomerSettingsEditor(projectId, user);
     const project = await this.repo.findOne({
       where: { id: projectId },
       relations: { contacts: true },
@@ -385,7 +406,73 @@ export class ProjectsService {
    * The customer's contacts not yet attached to the project (for the picker).
    * Empty if the project has no customer.
    */
-  async assignableContacts(projectId: string): Promise<ProjectContact[]> {
+  /**
+   * The project's customer & contact sections (read AND write) are reserved
+   * to admins and the project's manager — plain members see nothing here.
+   * Non-member outsiders keep getting 404 (never leak existence); members
+   * get an explicit 403.
+   */
+  private async assertCustomerSettingsEditor(
+    projectId: string,
+    user?: User,
+  ): Promise<void> {
+    if (!user || ProjectsService.isAdmin(user)) return;
+    if (!(await this.isMember(projectId, user.id))) {
+      throw new NotFoundException(`Project ${projectId} not found`);
+    }
+    const project = await this.findOne(projectId);
+    if (project.managerUserId !== user.id) {
+      throw new ForbiddenException(
+        'Müşteri ve irtibat bölümünü yalnızca proje yöneticisi veya admin görüntüleyebilir ve yönetebilir.',
+      );
+    }
+  }
+
+  /**
+   * The project's customer company + that customer's contact pool, for the
+   * workspace Customer tab. Admin/manager only — served here (not via the
+   * global /customers routes) so the manager needs no customers:read key.
+   */
+  async customerSection(
+    projectId: string,
+    user?: User,
+  ): Promise<{ company: Customer | null; contacts: ProjectContact[] }> {
+    await this.assertCustomerSettingsEditor(projectId, user);
+    const project = await this.findOne(projectId);
+    const company = project.customerCompany ?? null;
+    const pool = company
+      ? await this.contacts.find({
+          where: { customerId: company.id },
+          order: { firstName: 'ASC', lastName: 'ASC' },
+        })
+      : [];
+    return {
+      company,
+      contacts: pool.map((c) => ProjectsService.toContactView(c)),
+    };
+  }
+
+  /**
+   * id/code/name of every customer — feeds the manager's "Set customer"
+   * picker without requiring the global customers:read key.
+   */
+  async customerOptions(
+    projectId: string,
+    user?: User,
+  ): Promise<Array<{ id: string; code: string; name: string }>> {
+    await this.assertCustomerSettingsEditor(projectId, user);
+    const customers = await this.repo.manager.getRepository(Customer).find({
+      select: { id: true, code: true, name: true },
+      order: { code: 'ASC' },
+    });
+    return customers.map((c) => ({ id: c.id, code: c.code, name: c.name }));
+  }
+
+  async assignableContacts(
+    projectId: string,
+    user?: User,
+  ): Promise<ProjectContact[]> {
+    await this.assertCustomerSettingsEditor(projectId, user);
     const project = await this.repo.findOne({
       where: { id: projectId },
       relations: { contacts: true },
@@ -405,7 +492,9 @@ export class ProjectsService {
   async addContact(
     projectId: string,
     contactId: string,
+    user?: User,
   ): Promise<ProjectContact[]> {
+    await this.assertCustomerSettingsEditor(projectId, user);
     const project = await this.repo.findOne({
       where: { id: projectId },
       relations: { contacts: true },
@@ -435,7 +524,9 @@ export class ProjectsService {
   async removeContact(
     projectId: string,
     contactId: string,
+    user?: User,
   ): Promise<ProjectContact[]> {
+    await this.assertCustomerSettingsEditor(projectId, user);
     await this.findOne(projectId);
     await this.repo
       .createQueryBuilder()

@@ -10,6 +10,7 @@ import {
 import { ProcessStage } from '../project/entities/process-stage.entity';
 import { ProjectsService } from '../project/projects.service';
 import type { User } from '../users/entities/user.entity';
+import { Location } from './entities/location.entity';
 import { SectionReservation } from './entities/section-reservation.entity';
 import { Section } from './entities/section.entity';
 
@@ -20,7 +21,7 @@ export interface SectionScheduleStage {
   sequence: number;
   status: string;
   processId: string;
-  /** Stage-type category of the process (the "which process" label). */
+  /** The "which process" label (the owning order item's name). */
   processName: string | null;
   orderItemName: string | null;
   /** Comma-joined names of the stage's workers (stages have no responsible). */
@@ -35,6 +36,10 @@ export interface SectionScheduleReservation {
   id: string;
   startDate: string;
   endDate: string;
+  startAt: Date | null;
+  endAt: Date | null;
+  /** The planned stage this reservation belongs to (null = order-level). */
+  stageId: string | null;
   note: string | null;
   orderId: string;
   orderNumber: string;
@@ -44,6 +49,15 @@ export interface SectionScheduleReservation {
   projectId: string | null;
   projectName: string | null;
   stages: SectionScheduleStage[];
+}
+
+export interface LocationSchedule {
+  location: { id: string; code: string; name: string };
+  reservations: Array<
+    SectionScheduleReservation & {
+      section: { id: string; code: string; name: string } | null;
+    }
+  >;
 }
 
 export interface SectionSchedule {
@@ -135,6 +149,9 @@ export class SectionScheduleService {
         id: r.id,
         startDate: r.startDate,
         endDate: r.endDate,
+        startAt: r.startAt,
+        endAt: r.endAt,
+        stageId: r.stageId,
         note: r.note,
         orderId: r.orderId,
         orderNumber: r.order?.orderNumber ?? '',
@@ -144,6 +161,69 @@ export class SectionScheduleService {
         projectId: r.order?.project?.id ?? null,
         projectName: r.order?.project?.name ?? null,
         stages: stagesByOrder.get(r.orderId) ?? [],
+      })),
+    };
+  }
+
+  /**
+   * The whole LOCATION's calendar: every reservation across all of its
+   * sections (member-scoped like the section schedule) plus each reserved
+   * order's stages — the client classifies rows as reserved / running /
+   * completed via the linked stage's status.
+   */
+  async scheduleForLocation(
+    locationId: string,
+    options: { from?: string; to?: string; user?: User } = {},
+  ): Promise<LocationSchedule> {
+    const location = await this.sections.manager
+      .getRepository(Location)
+      .findOne({ where: { id: locationId } });
+    if (!location) {
+      throw new NotFoundException(`Location ${locationId} not found`);
+    }
+
+    const where: FindOptionsWhere<SectionReservation> = {
+      section: { locationId },
+    };
+    if (options.to) where.startDate = LessThanOrEqual(options.to);
+    if (options.from) where.endDate = MoreThanOrEqual(options.from);
+    if (options.user && !ProjectsService.isAdmin(options.user)) {
+      const ids = await this.projects.memberProjectIds(options.user.id);
+      where.order = { projectId: In(ids) };
+    }
+    const rows = await this.reservations.find({
+      where,
+      order: { startDate: 'ASC' },
+    });
+
+    const orderIds = [...new Set(rows.map((r) => r.orderId))];
+    const stagesByOrder = await this.stagesByOrder(orderIds);
+
+    return {
+      location: {
+        id: location.id,
+        code: location.code,
+        name: location.name,
+      },
+      reservations: rows.map((r) => ({
+        id: r.id,
+        startDate: r.startDate,
+        endDate: r.endDate,
+        startAt: r.startAt,
+        endAt: r.endAt,
+        stageId: r.stageId,
+        note: r.note,
+        orderId: r.orderId,
+        orderNumber: r.order?.orderNumber ?? '',
+        orderName: r.order?.name ?? null,
+        orderStatus: r.order?.status ?? null,
+        orderDueDate: r.order?.dueDate ?? null,
+        projectId: r.order?.project?.id ?? null,
+        projectName: r.order?.project?.name ?? null,
+        stages: stagesByOrder.get(r.orderId) ?? [],
+        section: r.section
+          ? { id: r.section.id, code: r.section.code, name: r.section.name }
+          : null,
       })),
     };
   }
@@ -167,7 +247,6 @@ export class SectionScheduleService {
         'li',
         'li.id = p.order_item_id AND li."deletedAt" IS NULL',
       )
-      .leftJoin('stage_type_categories', 'c', 'c.id = p.category_id')
       .select('s.id', 'id')
       .addSelect('s.name', 'name')
       .addSelect('s.sequence', 'sequence')
@@ -183,7 +262,8 @@ export class SectionScheduleService {
         'workerNames',
       )
       .addSelect('p.id', 'processId')
-      .addSelect('c.name', 'processName')
+      // Categories were removed — the order item names the process.
+      .addSelect('li.name', 'processName')
       .addSelect('li.name', 'orderItemName')
       .addSelect('li.order_id', 'orderId')
       .where('li.order_id IN (:...orderIds)', { orderIds })

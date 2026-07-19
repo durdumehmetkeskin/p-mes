@@ -115,7 +115,6 @@ export class ProjectProductionDataSource implements ReportDataSourceProvider {
             sequence: s.sequence,
             name: s.name,
             status: s.status,
-            stageType: s.stageType?.name ?? null,
             responsible:
               (s.workers ?? []).map((w) => w.name).join(', ') || null,
             startedAt: s.startedAt,
@@ -129,7 +128,6 @@ export class ProjectProductionDataSource implements ReportDataSourceProvider {
         });
         return {
           status: p.overallStatus,
-          category: p.category?.name ?? null,
           responsible: p.responsibleUser?.name ?? null,
           startedAt: p.startedAt,
           completedAt: p.completedAt,

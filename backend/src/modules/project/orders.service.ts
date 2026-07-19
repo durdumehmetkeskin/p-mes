@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -121,6 +122,7 @@ export class OrdersService {
 
   async create(dto: CreateOrderDto, user?: User): Promise<Order> {
     await this.assertProjectAccess(dto.projectId, user);
+    await this.assertOrderEditor(dto.projectId, user);
     // status is server-managed (derived from processes) — drop any sent value;
     // a new order always starts `pending`. orderNumber is user-entered.
     const { status: _status, ...rest } = dto;
@@ -180,6 +182,7 @@ export class OrdersService {
    */
   async remove(id: string, user?: User): Promise<void> {
     const order = await this.findOne(id, user); // 404 + membership scoping
+    await this.assertOrderEditor(order.projectId, user);
     const processCount = await this.processes
       .createQueryBuilder('p')
       .innerJoin('p.orderItem', 'oi')
@@ -202,6 +205,23 @@ export class OrdersService {
       if (reqs.length) await manager.softRemove(reqs);
       await manager.softRemove(order);
     });
+  }
+
+  /**
+   * Order-level editing (order create/delete, required-materials list
+   * add/edit/remove) is reserved to admins and the project's manager — plain
+   * members keep read access. Runs AFTER the membership scoping (outsiders
+   * keep getting 404; members get an explicit 403). Public: the
+   * order-material-requirements controller reuses it.
+   */
+  async assertOrderEditor(projectId: string, user?: User): Promise<void> {
+    if (!user || ProjectsService.isAdmin(user)) return;
+    const project = await this.projects.findOne(projectId);
+    if (project.managerUserId !== user.id) {
+      throw new ForbiddenException(
+        'Bu işlemi yalnızca proje yöneticisi veya admin yapabilir.',
+      );
+    }
   }
 
   /** Non-admins must be a member of the order's project (404 otherwise). */

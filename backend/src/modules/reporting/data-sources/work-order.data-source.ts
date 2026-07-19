@@ -95,7 +95,6 @@ export class WorkOrderDataSource implements ReportDataSourceProvider {
           input: s.input,
           output: s.output,
           status: s.status,
-          stageType: s.stageType?.name ?? null,
           responsible:
             (s.workers ?? []).map((w) => w.name).join(', ') || null,
           startedAt: s.startedAt,
@@ -108,7 +107,7 @@ export class WorkOrderDataSource implements ReportDataSourceProvider {
       });
       if (procTotal > 0) {
         processCompletion.push({
-          label: p.category?.name ?? `Süreç ${idx + 1}`,
+          label: `Süreç ${idx + 1}`,
           total: procTotal,
           completed: procCompleted,
           value: (procCompleted / procTotal) * 100,
@@ -116,7 +115,6 @@ export class WorkOrderDataSource implements ReportDataSourceProvider {
       }
       return {
         status: p.overallStatus,
-        category: p.category?.name ?? null,
         responsible: p.responsibleUser?.name ?? null,
         startedAt: p.startedAt,
         completedAt: p.completedAt,

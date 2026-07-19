@@ -14,29 +14,46 @@ export function DetailActions({
   id,
   name,
   editRoute,
+  editAllowed,
   onDeleted,
 }: {
   resource: string;
   id: string;
   name: string;
   editRoute?: string;
+  /**
+   * When set, replaces the permission-key gate on the edit pencil — for
+   * relationship-based authz (e.g. a project's manager may edit without
+   * holding the resource's update key). The caller decides; backend enforces.
+   */
+  editAllowed?: boolean;
   onDeleted?: () => void;
 }) {
   const router = useRouter();
   const { mutate: remove } = useDelete();
 
+  const editPencil = editRoute ? (
+    <Pressable
+      onPress={() => router.push(editRoute)}
+      hitSlop={8}
+      className="h-10 w-10 items-center justify-center rounded-md active:bg-accent"
+    >
+      <Icon icon={Pencil} color={colors.foreground} />
+    </Pressable>
+  ) : null;
+
   return (
     <>
-      {editRoute ? (
-        <Can resource={resource} action="edit">
-          <Pressable
-            onPress={() => router.push(editRoute)}
-            hitSlop={8}
-            className="h-10 w-10 items-center justify-center rounded-md active:bg-accent"
-          >
-            <Icon icon={Pencil} color={colors.foreground} />
-          </Pressable>
-        </Can>
+      {editPencil ? (
+        editAllowed !== undefined ? (
+          editAllowed ? (
+            editPencil
+          ) : null
+        ) : (
+          <Can resource={resource} action="edit">
+            {editPencil}
+          </Can>
+        )
       ) : null}
       <Can resource={resource} action="delete">
         <Pressable

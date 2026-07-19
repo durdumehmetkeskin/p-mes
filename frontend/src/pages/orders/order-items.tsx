@@ -1,4 +1,11 @@
-import { useCreate, useDelete, useInvalidate, useList, useUpdate } from "@refinedev/core";
+import {
+  useCreate,
+  useDelete,
+  useInvalidate,
+  useList,
+  useOne,
+  useUpdate,
+} from "@refinedev/core";
 import {
   ChevronDown,
   ChevronRight,
@@ -13,6 +20,7 @@ import { useForm } from "react-hook-form";
 
 import { Can } from "@/components/can";
 import { QrCodeDialog } from "@/components/qr/qr-code-dialog";
+import { AttachmentsPanel } from "@/pages/projects/workspace/attachments-panel";
 import { ConfirmDelete } from "@/pages/projects/workspace/confirm-delete";
 import { StatusBadge } from "@/components/refine-ui/status-badge";
 import { Button } from "@/components/ui/button";
@@ -24,6 +32,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { useCanEditProject } from "@/hooks/use-can-edit-project";
+import { usePermissions } from "@/hooks/use-permissions";
 import { OrderItemFormFields } from "./order-item-form-fields";
 import { OrderProcesses } from "./order-processes";
 
@@ -149,6 +159,16 @@ export function OrderItems({
   const invalidate = useInvalidate();
   const { mutate: removeItem } = useDelete();
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  // Item files are managed only by an admin or the project's manager
+  // (backend mirrors with a 403); members read/download only.
+  const { result: project } = useOne<{ managerUserId: string | null }>({
+    resource: "projects",
+    id: projectId,
+    queryOptions: { enabled: Boolean(projectId) },
+  });
+  const canEditProject = useCanEditProject();
+  const { has } = usePermissions();
+  const canManageFiles = canEditProject(project?.managerUserId);
   const { result } = useList<OrderItemRow>({
     resource: "order-items",
     filters: [{ field: "orderId", operator: "eq", value: orderId }],
@@ -285,11 +305,11 @@ export function OrderItems({
                     </div>
                   </div>
 
-                  {/* Expanded: the item's processes. */}
+                  {/* Expanded: the item's processes + files. */}
                   {expanded && (
-                    <div className="border-t bg-muted/20 p-3">
+                    <div className="space-y-4 border-t bg-muted/20 p-3">
                       {item.description && (
-                        <p className="mb-3 text-sm text-muted-foreground">
+                        <p className="text-sm text-muted-foreground">
                           {item.description}
                         </p>
                       )}
@@ -297,6 +317,13 @@ export function OrderItems({
                         orderItemId={item.id}
                         orderId={orderId}
                         projectId={projectId}
+                      />
+                      <AttachmentsPanel
+                        ownerType="order_item"
+                        ownerId={item.id}
+                        title="Files"
+                        canUpload={canManageFiles && has("attachments:create")}
+                        canDelete={canManageFiles && has("attachments:delete")}
                       />
                     </div>
                   )}

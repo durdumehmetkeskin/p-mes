@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ScrollView, Text, View } from "react-native";
+import { ScrollView, Text, TextInput, View } from "react-native";
 import {
   type BaseRecord,
   useGetIdentity,
@@ -32,6 +32,7 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { axiosInstance } from "@/providers/axios";
+import { colors } from "@/lib/theme";
 
 interface Stage extends BaseRecord {
   id: string;
@@ -115,9 +116,32 @@ export default function StageDetailScreen() {
     invalidate({ resource: "processes", invalidates: ["list"] });
   };
 
-  const changeStatus = async (status: string) => {
+  // Completing REQUIRES a manually entered duration (backend rejects
+  // otherwise) — the Completed buttons open this inline prompt first.
+  const [completeOpen, setCompleteOpen] = useState(false);
+  const [durationInput, setDurationInput] = useState("");
+  const openComplete = () => {
+    setDurationInput(
+      stage?.durationHours != null ? String(stage.durationHours) : "",
+    );
+    setCompleteOpen(true);
+  };
+  const confirmComplete = () => {
+    const hours = Number(durationInput);
+    if (!Number.isFinite(hours) || hours <= 0) return;
+    setCompleteOpen(false);
+    void changeStatus("completed", { durationHours: hours });
+  };
+
+  const changeStatus = async (
+    status: string,
+    extra?: Record<string, unknown>,
+  ) => {
     try {
-      await axiosInstance.patch(`/process-stages/${stageId}/status`, { status });
+      await axiosInstance.patch(`/process-stages/${stageId}/status`, {
+        status,
+        ...(extra ?? {}),
+      });
       refetch();
       toast.success("Status updated");
     } catch {
@@ -164,58 +188,83 @@ export default function StageDetailScreen() {
       ) : (
         <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
           <View className="rounded-lg border border-border bg-card p-4">
-            <View className="mb-3 flex-row items-center justify-between">
-              <SectionLabel>Status</SectionLabel>
+            <View className="mb-3 flex-row items-center justify-end">
               <StatusBadge label={status} />
             </View>
             {canStatusAll || canStatusWorker ? (
-              <View className="flex-row flex-wrap gap-2">
+              <View className="gap-2">
+                {/* The work actions are big full-width buttons. */}
                 {status === "pending" ? (
-                  <>
-                    <Button
-                      size="sm"
-                      label="Start"
-                      disabled={!unlocked}
-                      onPress={() => changeStatus("in_progress")}
-                    />
-                    {/* pending→completed shortcut skips the worker's own
-                        start — responsible/admin only (backend 403s). */}
-                    {canStatusAll ? (
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        label="Mark complete"
-                        disabled={!unlocked}
-                        onPress={() => changeStatus("completed")}
-                      />
-                    ) : null}
-                  </>
-                ) : null}
-                {status === "in_progress" ? (
-                  <>
-                    <Button
-                      size="sm"
-                      label="Mark complete"
-                      onPress={() => changeStatus("completed")}
-                    />
-                    {canStatusAll ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        label="Reset"
-                        onPress={() => changeStatus("pending")}
-                      />
-                    ) : null}
-                  </>
-                ) : null}
-                {status === "completed" && canStatusAll ? (
                   <Button
-                    size="sm"
-                    variant="outline"
-                    label="Reopen"
+                    size="lg"
+                    label="Start"
+                    disabled={!unlocked}
                     onPress={() => changeStatus("in_progress")}
                   />
                 ) : null}
+                {status === "in_progress" ? (
+                  <Button size="lg" label="Completed" onPress={openComplete} />
+                ) : null}
+                {completeOpen ? (
+                  <View className="gap-2 rounded-md border border-border bg-muted/30 p-2">
+                    <Text className="text-xs text-muted-foreground">
+                      Çalışma süresi (saat)
+                    </Text>
+                    <View className="flex-row items-center gap-2">
+                      <TextInput
+                        className="h-10 flex-1 rounded-md border border-input bg-background px-3 text-sm text-foreground"
+                        keyboardType="decimal-pad"
+                        placeholder="örn. 2.5"
+                        placeholderTextColor={colors.mutedForeground}
+                        value={durationInput}
+                        onChangeText={setDurationInput}
+                        autoFocus
+                      />
+                      <Button
+                        size="sm"
+                        label="Completed"
+                        disabled={!(Number(durationInput) > 0)}
+                        onPress={confirmComplete}
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        label="Cancel"
+                        onPress={() => setCompleteOpen(false)}
+                      />
+                    </View>
+                  </View>
+                ) : null}
+                {/* Secondary transitions — responsible/admin only. */}
+                <View className="flex-row flex-wrap gap-2">
+                  {/* pending→completed shortcut skips the worker's own
+                      start — responsible/admin only (backend 403s). */}
+                  {status === "pending" && canStatusAll ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      label="Completed"
+                      disabled={!unlocked}
+                      onPress={openComplete}
+                    />
+                  ) : null}
+                  {status === "in_progress" && canStatusAll ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      label="Reset"
+                      onPress={() => changeStatus("pending")}
+                    />
+                  ) : null}
+                  {status === "completed" && canStatusAll ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      label="Reopen"
+                      onPress={() => changeStatus("in_progress")}
+                    />
+                  ) : null}
+                </View>
               </View>
             ) : null}
           </View>
@@ -285,23 +334,31 @@ export default function StageDetailScreen() {
           />
 
           <StageTools
+            canManage={canStatusAll}
             stageId={stageId as string}
             stageCompleted={status === "completed"}
             windowStart={windowStart}
             windowEnd={windowEnd}
           />
 
-          <AttachmentsPanel ownerType="stage" ownerId={stageId as string} />
+          {/* Stage documents: only this stage's workers, the process
+              responsible or an admin may add (backend mirrors with a 403). */}
+          <AttachmentsPanel
+            ownerType="stage"
+            ownerId={stageId as string}
+            canUpload={(canStatusAll || canStatusWorker) && has("attachments:create")}
+          />
 
-          <Can resource="section-reservations" action="create">
+          {(canStatusAll || has("section-reservations:create")) && (
             <StageReservation
+              canManage={canStatusAll}
               stageId={stageId as string}
               orderId={process?.orderItem?.orderId}
               windowStart={windowStart}
               windowEnd={windowEnd}
               onChanged={refetch}
             />
-          </Can>
+          )}
         </ScrollView>
       )}
     </Screen>

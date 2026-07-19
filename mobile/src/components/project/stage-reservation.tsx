@@ -5,7 +5,6 @@ import { Calendar } from "react-native-calendars";
 import { Trash2 } from "lucide-react-native";
 import { toast } from "sonner-native";
 
-import { Can } from "@/components/can";
 import { SectionLabel } from "@/components/refine-ui/field-row";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -53,12 +52,15 @@ const calTheme = {
  * its own reservation row; this stage's rows are listed and removable.
  */
 export function StageReservation({
+  canManage = false,
   stageId,
   orderId,
   windowStart,
   windowEnd,
   onChanged,
 }: {
+  /** Process responsible or admin — manages reservations without keys. */
+  canManage?: boolean;
   stageId: string;
   orderId?: string;
   /** Stage date window (YYYY-MM-DD) — reservation must stay inside it. */
@@ -253,14 +255,14 @@ export function StageReservation({
                 {fmtWall(r.startAt ? String(r.startAt) : null, String(r.startDate))} →{" "}
                 {fmtWall(r.endAt ? String(r.endAt) : null, String(r.endDate))}
               </Text>
-              <Can resource="section-reservations" action="delete">
+              {canManage ? (
                 <Pressable
                   onPress={() => void removeReservation(String(r.id))}
                   hitSlop={6}
                 >
                   <Icon icon={Trash2} size={14} color={colors.destructive} />
                 </Pressable>
-              </Can>
+              ) : null}
             </View>
           ))}
         </View>

@@ -14,7 +14,6 @@ import { User } from '../../users/entities/user.entity';
 import { ProcessStageStatus } from '../enums/process-stage-status.enum';
 import { ProcessStageLink } from './process-stage-link.entity';
 import { Process } from './process.entity';
-import { StageType } from './stage-type.entity';
 
 /**
  * A stage of a runtime process. Copied from a workflow template stage at clone
@@ -33,20 +32,6 @@ export class ProcessStage extends BaseEntity {
   @Index()
   @Column({ type: 'uuid', name: 'process_id' })
   processId: string;
-
-  // Catalog type. Nullable + SET NULL so catalog changes do not break
-  // existing process stages.
-  @ManyToOne(() => StageType, {
-    eager: true,
-    nullable: true,
-    onDelete: 'SET NULL',
-  })
-  @JoinColumn({ name: 'stage_type_id' })
-  stageType: StageType | null;
-
-  @Index()
-  @Column({ type: 'uuid', name: 'stage_type_id', nullable: true })
-  stageTypeId: string | null;
 
   @Column({ type: 'int' })
   sequence: number;

@@ -38,7 +38,6 @@ export default function ProcessCreateScreen() {
   const onSubmit = handleSubmit((v) => {
     const body: Record<string, unknown> = { orderItemId };
     if (v.mode === "template") body.templateId = v.templateId;
-    else body.categoryId = v.categoryId;
     if (v.requireEstimates) {
       body.requireEstimates = true;
       body.estimatedStartDate = v.estimatedStartDate || undefined;
@@ -86,17 +85,7 @@ export default function ProcessCreateScreen() {
             getLabel={(t) => String(t.name)}
             rules={{ required: "Template is required" }}
           />
-        ) : (
-          <RelationSelectField
-            control={control}
-            name="categoryId"
-            label="Category"
-            resource="stage-type-categories"
-            filters={[{ field: "projectId", operator: "eq", value: id }]}
-            getLabel={(c) => String(c.name)}
-            rules={{ required: "Category is required" }}
-          />
-        )}
+        ) : null}
 
         <SwitchField
           control={control}

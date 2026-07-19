@@ -15,7 +15,7 @@ export interface StageCard {
   orderId: string | null;
   orderNumber: string | null;
   processId: string;
-  categoryName: string | null;
+  processName: string | null;
   estimatedStartDate: string | null;
   estimatedCompletedDate: string | null;
   startedAt: string | null;
@@ -55,7 +55,6 @@ export class StageBoardService {
       .innerJoin('p.orderItem', 'li')
       .innerJoin('li.order', 'o')
       .innerJoin('o.project', 'proj')
-      .leftJoin('p.category', 'cat')
       // "Assigned" = has at least one worker.
       .where(
         'EXISTS (SELECT 1 FROM process_stage_workers w WHERE w.stage_id = s.id)',
@@ -103,7 +102,7 @@ export class StageBoardService {
         's.estimated_completed_date AS "estimatedCompletedDate"',
         's.started_at AS "startedAt"',
         's.completed_at AS "completedAt"',
-        'cat.name AS "categoryName"',
+        'li.name AS "processName"',
         'o.id AS "orderId"',
         'o.order_number AS "orderNumber"',
         'proj.id AS "projectId"',
@@ -126,7 +125,7 @@ export class StageBoardService {
       orderId: r.orderId,
       orderNumber: r.orderNumber,
       processId: r.processId,
-      categoryName: r.categoryName,
+      processName: r.processName,
       estimatedStartDate: r.estimatedStartDate,
       estimatedCompletedDate: r.estimatedCompletedDate,
       startedAt: r.startedAt ? new Date(r.startedAt).toISOString() : null,

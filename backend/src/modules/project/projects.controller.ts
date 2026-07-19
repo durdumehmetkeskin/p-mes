@@ -115,44 +115,83 @@ export class ProjectsController {
 
   @RequirePermissions('projects:read')
   @Get(':id/contacts')
-  @ApiOperation({ summary: 'List the contacts attached to a project' })
-  async listContacts(
+  @ApiOperation({
+    summary:
+      'List the contacts attached to a project (admin or project manager only)',
+  })
+  listContacts(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: User,
   ): Promise<ProjectContact[]> {
-    await this.service.findOneForUser(id, user); // 404 for non-members
-    return this.service.listContacts(id);
+    return this.service.listContacts(id, user);
   }
 
-  @RequirePermissions('projects:manage-contacts')
+  // The workspace Customer tab's data source — served project-scoped so the
+  // manager needs no global customers:read/contacts:read keys.
+  @RequirePermissions('projects:read')
+  @Get(':id/customer')
+  @ApiOperation({
+    summary:
+      "The project's customer + its contact pool (admin or project manager only)",
+  })
+  customerSection(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+  ): ReturnType<ProjectsService['customerSection']> {
+    return this.service.customerSection(id, user);
+  }
+
+  @RequirePermissions('projects:read')
+  @Get(':id/customer-options')
+  @ApiOperation({
+    summary:
+      'All customers (id/code/name) for the Set-customer picker (admin/manager)',
+  })
+  customerOptions(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+  ): ReturnType<ProjectsService['customerOptions']> {
+    return this.service.customerOptions(id, user);
+  }
+
+  // No @RequirePermissions on the customer-settings routes below:
+  // authorization is decided in the service — only an admin or the project's
+  // manager may attach/detach contacts (the manager may lack the
+  // projects:manage-contacts key, so a guard-level check would lock them out).
   @Get(':id/assignable-contacts')
   @ApiOperation({
-    summary: "List the customer's contacts that can be attached",
+    summary:
+      "List the customer's contacts that can be attached (admin/manager)",
   })
   assignableContacts(
     @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
   ): Promise<ProjectContact[]> {
-    return this.service.assignableContacts(id);
+    return this.service.assignableContacts(id, user);
   }
 
-  @RequirePermissions('projects:manage-contacts')
   @Post(':id/contacts')
-  @ApiOperation({ summary: 'Attach a contact to a project' })
+  @ApiOperation({
+    summary: 'Attach a contact to a project (admin or project manager only)',
+  })
   addContact(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AddContactDto,
+    @CurrentUser() user: User,
   ): Promise<ProjectContact[]> {
-    return this.service.addContact(id, dto.contactId);
+    return this.service.addContact(id, dto.contactId, user);
   }
 
-  @RequirePermissions('projects:manage-contacts')
   @Delete(':id/contacts/:contactId')
-  @ApiOperation({ summary: 'Detach a contact from a project' })
+  @ApiOperation({
+    summary: 'Detach a contact from a project (admin or project manager only)',
+  })
   removeContact(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('contactId', ParseUUIDPipe) contactId: string,
+    @CurrentUser() user: User,
   ): Promise<ProjectContact[]> {
-    return this.service.removeContact(id, contactId);
+    return this.service.removeContact(id, contactId, user);
   }
 
   // Materials/tools allocated to a project (members only for non-admins).
@@ -234,9 +273,11 @@ export class ProjectsController {
     return this.service.create(dto, user);
   }
 
-  @RequirePermissions('projects:update')
+  // No @RequirePermissions: authorization is decided in the service — only an
+  // admin or the project's manager may edit (the manager may lack the
+  // projects:update key, so a guard-level check would lock them out).
   @Patch(':id')
-  @ApiOperation({ summary: 'Update a project (members only for non-admins)' })
+  @ApiOperation({ summary: 'Update a project (admin or project manager only)' })
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateProjectDto,

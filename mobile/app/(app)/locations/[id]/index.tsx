@@ -6,12 +6,11 @@ import {
   useList,
   useOne,
 } from "@refinedev/core";
-import { Activity, Pencil, Plus, Trash2 } from "lucide-react-native";
+import { Pencil, Plus, Trash2 } from "lucide-react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Alert } from "react-native";
 
 import { Can } from "@/components/can";
-import { confirm, confirmDelete } from "@/components/refine-ui/confirm";
+import { confirmDelete } from "@/components/refine-ui/confirm";
 import { DetailActions } from "@/components/refine-ui/detail-actions";
 import { FieldRow, SectionLabel } from "@/components/refine-ui/field-row";
 import { Screen } from "@/components/refine-ui/screen";
@@ -19,7 +18,6 @@ import { TelemetryPanel } from "@/components/location/telemetry-panel";
 import { StatusBadge } from "@/components/refine-ui/status-badge";
 import { Icon } from "@/components/ui/icon";
 import { Skeleton } from "@/components/ui/skeleton";
-import { axiosInstance } from "@/providers/axios";
 import { colors } from "@/lib/theme";
 
 interface Location extends BaseRecord {
@@ -35,15 +33,6 @@ interface Section extends BaseRecord {
   code?: string;
   name?: string;
   isActive?: boolean;
-}
-
-interface Reservation extends BaseRecord {
-  id: string;
-  startDate?: string;
-  endDate?: string;
-  note?: string;
-  section?: { code?: string; name?: string };
-  order?: { orderNumber?: string };
 }
 
 function Card({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
@@ -75,35 +64,7 @@ export default function LocationDetailScreen() {
   });
   const sections = sectionsRes?.data ?? [];
 
-  const { result: resvRes } = useList<Reservation>({
-    resource: "section-reservations",
-    filters: [{ field: "locationId", operator: "eq", value: id }],
-    sorters: [{ field: "startDate", order: "desc" }],
-    pagination: { mode: "off" },
-    queryOptions: { retry: false },
-    errorNotification: false,
-  });
-  const reservations = resvRes?.data ?? [];
-
   const { mutate: deleteSection } = useDelete();
-  const { mutate: deleteReservation } = useDelete();
-
-  const showConditions = async (rid: string) => {
-    try {
-      const { data } = await axiosInstance.get(
-        `/section-reservations/${rid}/conditions`,
-      );
-      const s = data?.summary;
-      Alert.alert(
-        "Production conditions",
-        s
-          ? `Readings: ${s.count}\nTemp: ${s.tempMin}–${s.tempMax} (avg ${s.tempAvg})\nHumidity: ${s.humidityMin}–${s.humidityMax} (avg ${s.humidityAvg})`
-          : "No condition data.",
-      );
-    } catch {
-      Alert.alert("Production conditions", "Could not load conditions.");
-    }
-  };
 
   return (
     <Screen
@@ -189,66 +150,6 @@ export default function LocationDetailScreen() {
                           confirmDelete(s.name ?? s.code ?? "section", () =>
                             deleteSection({ resource: "sections", id: s.id }),
                           )
-                        }
-                        hitSlop={6}
-                        className="h-8 w-8 items-center justify-center rounded-md active:bg-accent"
-                      >
-                        <Icon icon={Trash2} size={16} color={colors.destructive} />
-                      </Pressable>
-                    </Can>
-                  </View>
-                </View>
-              ))
-            )}
-          </Card>
-
-          <Card
-            title={`Reservations${reservations.length ? ` (${reservations.length})` : ""}`}
-          >
-            {reservations.length === 0 ? (
-              <Text className="p-3 text-sm text-muted-foreground">
-                No reservations
-              </Text>
-            ) : (
-              reservations.map((r, i) => (
-                <View
-                  key={r.id}
-                  className={
-                    i > 0
-                      ? "flex-row items-center justify-between border-t border-border p-3"
-                      : "flex-row items-center justify-between p-3"
-                  }
-                >
-                  <View className="flex-1">
-                    <Text className="text-sm text-foreground">
-                      {r.section?.code ?? "—"}
-                      {r.order?.orderNumber ? ` · ${r.order.orderNumber}` : ""}
-                    </Text>
-                    <Text className="text-xs text-muted-foreground">
-                      {r.startDate} → {r.endDate}
-                    </Text>
-                  </View>
-                  <View className="flex-row items-center gap-1">
-                    <Pressable
-                      onPress={() => showConditions(r.id)}
-                      hitSlop={6}
-                      className="h-8 w-8 items-center justify-center rounded-md active:bg-accent"
-                    >
-                      <Icon icon={Activity} size={16} color={colors.mutedForeground} />
-                    </Pressable>
-                    <Can resource="section-reservations" action="delete">
-                      <Pressable
-                        onPress={() =>
-                          confirm({
-                            title: "Delete reservation?",
-                            confirmLabel: "Delete",
-                            destructive: true,
-                            onConfirm: () =>
-                              deleteReservation({
-                                resource: "section-reservations",
-                                id: r.id,
-                              }),
-                          })
                         }
                         hitSlop={6}
                         className="h-8 w-8 items-center justify-center rounded-md active:bg-accent"

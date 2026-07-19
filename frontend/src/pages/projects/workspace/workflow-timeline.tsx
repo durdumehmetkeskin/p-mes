@@ -30,7 +30,6 @@ interface OrderRow {
 
 interface ProcessRow {
   id: string;
-  category: { id: string; name: string } | null;
   overallStatus: string;
   responsibleUser: { id: string; name: string } | null;
   stages: StageData[];
@@ -289,7 +288,7 @@ export const ProjectWorkflowTimeline = () => {
                           <div key={process.id}>
                             <div className="flex items-center gap-2 bg-muted/20 px-4 py-1.5">
                               <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-                                {process.category?.name ?? "Process"}
+                                {"Process"}
                               </span>
                               <StatusBadge label={process.overallStatus} />
                             </div>

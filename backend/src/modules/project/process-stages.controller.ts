@@ -127,7 +127,7 @@ export class ProcessStagesController {
     @Body() dto: UpdateProcessStageStatusDto,
     @CurrentUser() user: User,
   ): Promise<ProcessStage> {
-    return this.service.updateStatus(id, dto.status, user);
+    return this.service.updateStatus(id, dto.status, user, dto.durationHours);
   }
 
   // No @RequirePermissions: authorization is decided in the service — only the
@@ -171,9 +171,13 @@ export class ProcessStagesController {
     return this.service.listToolReservations(id, user);
   }
 
-  @RequirePermissions('process-stages:reserve-tools')
+  // No @RequirePermissions on the three tool-reservation mutations below:
+  // the service authorizes admin ∨ process-stages:reserve-tools key holders
+  // ∨ the owning PROCESS RESPONSIBLE (who may hold no global key).
   @Post('process-stages/:id/tool-reservations')
-  @ApiOperation({ summary: 'Reserve a tool for this stage' })
+  @ApiOperation({
+    summary: 'Reserve a tool for this stage (responsible/key/admin)',
+  })
   reserveTool(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ReserveStageToolDto,
@@ -182,7 +186,6 @@ export class ProcessStagesController {
     return this.service.reserveTool(id, dto, user);
   }
 
-  @RequirePermissions('process-stages:reserve-tools')
   @Patch('process-stages/:id/tool-reservations/:reservationId')
   @ApiOperation({
     summary: 'Re-date a tool reservation (still-reserved only)',
@@ -196,7 +199,6 @@ export class ProcessStagesController {
     return this.service.updateToolReservation(id, reservationId, dto, user);
   }
 
-  @RequirePermissions('process-stages:reserve-tools')
   @Delete('process-stages/:id/tool-reservations/:reservationId')
   @HttpCode(204)
   @ApiOperation({ summary: 'Remove a tool reservation from this stage' })

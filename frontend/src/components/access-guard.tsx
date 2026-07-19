@@ -13,12 +13,14 @@ import { canAccessResource } from "@/providers/access-control";
  * direct URL navigation.
  */
 export function AccessGuard({ children }: { children: ReactNode }) {
-  const { resource } = useResourceParams();
+  const { resource, action } = useResourceParams();
   const { ready, state } = useAccessState();
 
   // Wait for the (cached, fast) access state before deciding, so we never flash
   // a forbidden page or leak a forbidden one.
   if (!ready || !state) return null;
-  if (!canAccessResource(state, resource?.name)) return <Forbidden />;
+  if (!canAccessResource(state, resource?.name, action ?? "list")) {
+    return <Forbidden />;
+  }
   return <>{children}</>;
 }

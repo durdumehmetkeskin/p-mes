@@ -5,8 +5,6 @@ export { ProjectOrderDetail } from "./order-detail";
 export { ProjectCustomer } from "./customer";
 export { ProjectContacts } from "./contacts";
 export { ProjectEmployees } from "./employees";
-export { ProjectStageTypes } from "./stage-types";
-export { ProjectCategories } from "./categories";
 export { ProjectFiles } from "./files";
 export { ProjectInventory } from "./inventory";
 export { ProjectMaterialDetail } from "./material-detail";

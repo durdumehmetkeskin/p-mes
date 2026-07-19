@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/searchable-select";
 import { axiosInstance } from "@/providers/axios";
 import { useIsAdmin } from "@/hooks/use-is-admin";
+import { usePermissions } from "@/hooks/use-permissions";
 import { colors } from "@/lib/theme";
 import {
   DaySlotStrip,
@@ -96,27 +97,37 @@ export function StageTools({
   stageCompleted,
   windowStart,
   windowEnd,
+  canManage = false,
 }: {
   stageId: string;
   stageCompleted: boolean;
+  /** Reserve/re-date/remove tool reservations — process responsible or
+   *  admin (backend also honors the reserve-tools key). */
+  canManage?: boolean;
   /** Stage date window (YYYY-MM-DD) — reservations exist only inside it. */
   windowStart?: string | null;
   windowEnd?: string | null;
 }) {
   const apiUrl = useApiUrl();
   const isAdmin = useIsAdmin();
+  // Everything here reads tools:read-guarded data — don't even ask without
+  // the key (a plain member would just collect silent 403s).
+  const { has } = usePermissions();
+  const canReadTools = has("tools:read");
+  // Reservation mutations: responsible/admin (prop) or legacy key holders.
+  const canReserve = canManage || has("process-stages:reserve-tools");
   const { result, query } = useCustom<ToolReservation[]>({
     url: `${apiUrl}/process-stages/${stageId}/tool-reservations`,
     method: "get",
     errorNotification: false,
-    queryOptions: { retry: false },
+    queryOptions: { retry: false, enabled: canReadTools },
   });
   const reservations = Array.isArray(result?.data) ? result.data : [];
   const { result: tools } = useList<ToolOpt>({
     resource: "tools",
     pagination: { mode: "off" },
     errorNotification: false,
-    queryOptions: { retry: false },
+    queryOptions: { retry: false, enabled: canReadTools },
   });
 
   const [toolId, setToolId] = useState<string | null>(null);
@@ -149,7 +160,7 @@ export function StageTools({
     url: `${apiUrl}/tools/${toolId}/reservations`,
     method: "get",
     errorNotification: false,
-    queryOptions: { retry: false, enabled: Boolean(toolId) },
+    queryOptions: { retry: false, enabled: Boolean(toolId) && canReadTools },
   });
   const taken = useMemo(
     () =>
@@ -374,20 +385,22 @@ export function StageTools({
                     ) : !isAdmin && actionable ? (
                       <Text className="text-xs text-muted-foreground">Scan QR</Text>
                     ) : null}
-                    <Can resource="process-stages" action="reserve-tools">
-                      {r.status === "reserved" ? (
-                        <Pressable onPress={() => startEdit(r)} hitSlop={6}>
-                          <Icon
-                            icon={CalendarClock}
-                            size={16}
-                            color={colors.mutedForeground}
-                          />
+                    {canReserve ? (
+                      <>
+                        {r.status === "reserved" ? (
+                          <Pressable onPress={() => startEdit(r)} hitSlop={6}>
+                            <Icon
+                              icon={CalendarClock}
+                              size={16}
+                              color={colors.mutedForeground}
+                            />
+                          </Pressable>
+                        ) : null}
+                        <Pressable onPress={() => remove(r.id)} hitSlop={6}>
+                          <Icon icon={Trash2} size={16} color={colors.destructive} />
                         </Pressable>
-                      ) : null}
-                      <Pressable onPress={() => remove(r.id)} hitSlop={6}>
-                        <Icon icon={Trash2} size={16} color={colors.destructive} />
-                      </Pressable>
-                    </Can>
+                      </>
+                    ) : null}
                   </View>
                 </View>
                 {r.reservedFrom && r.reservedTo ? (
@@ -406,7 +419,7 @@ export function StageTools({
         </View>
       )}
 
-      <Can resource="process-stages" action="reserve-tools">
+      {canReserve ? (
         <View className="mt-3 gap-3">
           <View className="flex-row items-center justify-between">
             <Label>{editId ? "Re-date reservation" : "Tool reservation"}</Label>
@@ -520,7 +533,7 @@ export function StageTools({
             </>
           ) : null}
         </View>
-      </Can>
+      ) : null}
     </View>
   );
 }

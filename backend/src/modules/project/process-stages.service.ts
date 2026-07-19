@@ -27,7 +27,6 @@ import { ProcessStage } from './entities/process-stage.entity';
 import { ProcessStageLink } from './entities/process-stage-link.entity';
 import { StageCompletionReport } from './entities/stage-completion-report.entity';
 import { Process } from './entities/process.entity';
-import { StageType } from './entities/stage-type.entity';
 import { ProcessStageStatus } from './enums/process-stage-status.enum';
 import { ProcessStatus } from './enums/process-status.enum';
 import { OrdersService } from './orders.service';
@@ -45,8 +44,6 @@ export class ProcessStagesService {
     private readonly stages: Repository<ProcessStage>,
     @InjectRepository(Process)
     private readonly processes: Repository<Process>,
-    @InjectRepository(StageType)
-    private readonly stageTypes: Repository<StageType>,
     @InjectRepository(StageCompletionReport)
     private readonly reports: Repository<StageCompletionReport>,
     @InjectRepository(StockItem)
@@ -106,6 +103,37 @@ export class ProcessStagesService {
     if (!user || process.responsibleUserId !== user.id) {
       throw new ForbiddenException(
         'Bu işlemi yalnızca proses sorumlusu veya admin yapabilir.',
+      );
+    }
+  }
+
+  /** Does any of the user's roles carry the given permission key? */
+  private static hasKey(user: User | undefined, key: string): boolean {
+    return Boolean(
+      user?.roles?.some((r) => (r.permissions ?? []).includes(key)),
+    );
+  }
+
+  /**
+   * Tool reservations for a stage may be managed by an admin, a holder of the
+   * process-stages:reserve-tools key (legacy/custom roles), or the owning
+   * PROCESS'S RESPONSIBLE — planning their own process needs no global key.
+   */
+  private async assertToolReservationEditor(
+    stageId: string,
+    user?: User,
+  ): Promise<void> {
+    if (!user || ProjectsService.isAdmin(user)) return;
+    if (ProcessStagesService.hasKey(user, 'process-stages:reserve-tools')) {
+      return;
+    }
+    const stage = await this.findStage(stageId);
+    const process = await this.processes.findOne({
+      where: { id: stage.processId },
+    });
+    if (process?.responsibleUserId !== user.id) {
+      throw new ForbiddenException(
+        'Araç rezervasyonunu yalnızca proses sorumlusu, yetkili rol veya admin yönetebilir.',
       );
     }
   }
@@ -307,6 +335,7 @@ export class ProcessStagesService {
     user?: User,
   ): Promise<unknown[]> {
     await this.assertStageAccess(stageId, user);
+    await this.assertToolReservationEditor(stageId, user);
     const stage = await this.findStage(stageId);
     const tool = await this.tools.findOne({ where: { id: dto.toolId } });
     if (!tool) throw new NotFoundException(`Tool ${dto.toolId} not found`);
@@ -403,6 +432,7 @@ export class ProcessStagesService {
     user?: User,
   ): Promise<unknown[]> {
     await this.assertStageAccess(stageId, user);
+    await this.assertToolReservationEditor(stageId, user);
     const stage = await this.findStage(stageId);
     const res = await this.toolReservations.findOne({
       where: { id: reservationId, stageId },
@@ -462,6 +492,7 @@ export class ProcessStagesService {
     user?: User,
   ): Promise<void> {
     await this.assertStageAccess(stageId, user);
+    await this.assertToolReservationEditor(stageId, user);
     const res = await this.toolReservations.findOne({
       where: { id: reservationId, stageId },
     });
@@ -529,18 +560,6 @@ export class ProcessStagesService {
         'Devam eden prosese aşama eklenemez. Aşamalar yalnızca düzenlenebilir.',
       );
     }
-    const stageType = await this.stageTypes.findOne({
-      where: { id: dto.stageTypeId },
-    });
-    if (!stageType) {
-      throw new NotFoundException(`Stage type ${dto.stageTypeId} not found`);
-    }
-    // Category gating: a stage type can only be added to a same-category process.
-    if (stageType.categoryId !== process.categoryId) {
-      throw new BadRequestException(
-        'Stage type category must match the process category.',
-      );
-    }
     // Estimate gating: processes requiring estimates need them on every stage.
     if (
       process.requireEstimates &&
@@ -555,11 +574,10 @@ export class ProcessStagesService {
     const max = await this.stages.maximum('sequence', { processId });
     const stage = this.stages.create({
       processId,
-      stageTypeId: stageType.id,
       sequence: (max ?? 0) + 1,
-      name: dto.name ?? stageType.name,
-      input: dto.input ?? stageType.defaultInput ?? null,
-      output: dto.output ?? stageType.defaultOutput ?? null,
+      name: dto.name,
+      input: dto.input ?? null,
+      output: dto.output ?? null,
       durationHours: dto.durationHours ?? null,
       estimatedStartDate: dto.estimatedStartDate ?? null,
       estimatedCompletedDate: dto.estimatedCompletedDate ?? null,
@@ -862,9 +880,22 @@ export class ProcessStagesService {
     id: string,
     status: ProcessStageStatus,
     user?: User,
+    durationHours?: number,
   ): Promise<ProcessStage> {
     await this.assertStageAccess(id, user);
     const stage = await this.findStage(id);
+
+    // Completing REQUIRES a manually entered duration — sent with this call
+    // or already stored on the stage from an earlier edit.
+    if (
+      status === ProcessStageStatus.Completed &&
+      durationHours == null &&
+      stage.durationHours == null
+    ) {
+      throw new BadRequestException(
+        'Aşama tamamlanmadan önce çalışma süresi (saat) girilmelidir.',
+      );
+    }
 
     // Relationship-based authorization (no permission key): admin or the
     // owning process's responsible may make ANY transition; a stage worker
@@ -943,6 +974,8 @@ export class ProcessStagesService {
       // Completing implies it has run — keep/seed startedAt so a duration exists.
       stage.startedAt = stage.startedAt ?? now;
       stage.completedAt = now;
+      // The manually entered work duration arrives with the completion.
+      if (durationHours != null) stage.durationHours = durationHours;
     } else if (status === ProcessStageStatus.InProgress) {
       stage.startedAt = stage.startedAt ?? now;
       stage.completedAt = null;
@@ -962,6 +995,8 @@ export class ProcessStagesService {
     }
 
     await this.recomputeOverall(stage.processId);
+    // A duration entered at completion changes the process total.
+    if (durationHours != null) await this.recomputeDuration(stage.processId);
     return saved;
   }
 

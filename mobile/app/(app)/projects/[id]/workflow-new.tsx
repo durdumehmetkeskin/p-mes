@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Pressable, Text, View } from "react-native";
-import { type BaseRecord, useInvalidate, useList, useOne } from "@refinedev/core";
+import { type BaseRecord, useInvalidate, useOne } from "@refinedev/core";
 import DraggableFlatList, {
   type RenderItemParams,
   ScaleDecorator,
@@ -10,18 +10,15 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { toast } from "sonner-native";
 
-import { ActionMenu } from "@/components/ui/action-menu";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { SearchableSelect } from "@/components/ui/searchable-select";
 import { axiosInstance } from "@/providers/axios";
 import { colors } from "@/lib/theme";
 
 interface TplStage {
   key: string;
-  stageTypeId: string;
   name: string;
 }
 
@@ -33,26 +30,8 @@ export default function WorkflowBuilderScreen() {
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [categoryId, setCategoryId] = useState<string | null>(null);
   const [stages, setStages] = useState<TplStage[]>([]);
   const [saving, setSaving] = useState(false);
-
-  const { result: catRes } = useList<BaseRecord>({
-    resource: "stage-type-categories",
-    filters: [{ field: "projectId", operator: "eq", value: id }],
-    pagination: { mode: "off" },
-    queryOptions: { retry: false },
-    errorNotification: false,
-  });
-  const { result: stRes } = useList<BaseRecord>({
-    resource: "stage-types",
-    filters: categoryId
-      ? [{ field: "categoryId", operator: "eq", value: categoryId }]
-      : [],
-    pagination: { mode: "off" },
-    queryOptions: { enabled: !!categoryId, retry: false },
-    errorNotification: false,
-  });
 
   const { result: tplRes } = useOne<BaseRecord>({
     resource: "workflow-templates",
@@ -65,34 +44,36 @@ export default function WorkflowBuilderScreen() {
     if (isEdit && t) {
       setName(String(t.name ?? ""));
       setDescription(String(t.description ?? ""));
-      setCategoryId((t.categoryId as string) ?? null);
       setStages(
         ((t.stages as BaseRecord[]) ?? []).map((s, i) => ({
           key: `${s.id ?? i}`,
-          stageTypeId: String(s.stageTypeId ?? s.stageType?.id ?? ""),
-          name: String(s.name ?? s.stageType?.name ?? "Stage"),
+          name: String(s.name ?? "Stage"),
         })),
       );
     }
   }, [isEdit, tplRes]);
 
-  const addStage = (st: BaseRecord) =>
+  const [newStage, setNewStage] = useState("");
+  const addStage = () => {
+    const stageName = newStage.trim();
+    if (!stageName) return;
+    setNewStage("");
     setStages((prev) => [
       ...prev,
-      { key: `${st.id}-${Date.now()}`, stageTypeId: String(st.id), name: String(st.name) },
+      { key: `s-${Date.now()}-${prev.length}`, name: stageName },
     ]);
+  };
 
   const save = async () => {
-    if (!name.trim() || !categoryId) {
-      toast.error("Name and category are required");
+    if (!name.trim()) {
+      toast.error("Name is required");
       return;
     }
     setSaving(true);
     const body: Record<string, unknown> = {
       name: name.trim(),
       description: description || undefined,
-      categoryId,
-      stages: stages.map((s) => ({ stageTypeId: s.stageTypeId, name: s.name })),
+      stages: stages.map((s) => ({ name: s.name })),
     };
     if (!isEdit) body.projectId = id;
     try {
@@ -153,38 +134,28 @@ export default function WorkflowBuilderScreen() {
           <Input value={description} onChangeText={setDescription} />
         </View>
         <View className="gap-1.5">
-          <Label>Category</Label>
-          <SearchableSelect
-            value={categoryId}
-            onChange={(v) => {
-              setCategoryId(v);
-              setStages([]);
-            }}
-            options={(catRes?.data ?? []).map((c) => ({
-              label: String(c.name),
-              value: String(c.id),
-            }))}
-            placeholder="Select category"
-          />
-        </View>
-        <View className="flex-row items-center justify-between">
           <Text className="text-[11px] font-sans-semibold uppercase tracking-wider text-muted-foreground">
             Stages ({stages.length})
           </Text>
-          {categoryId ? (
-            <ActionMenu
-              title="Add stage"
-              options={(stRes?.data ?? []).map((st) => ({
-                label: String(st.name),
-                onPress: () => addStage(st),
-              }))}
-              trigger={(open) => (
-                <Pressable onPress={open} hitSlop={8} className="h-8 w-8 items-center justify-center rounded-md active:bg-accent">
-                  <Icon icon={Plus} size={18} color={colors.foreground} />
-                </Pressable>
-              )}
-            />
-          ) : null}
+          <View className="flex-row items-center gap-2">
+            <View className="flex-1">
+              <Input
+                value={newStage}
+                onChangeText={setNewStage}
+                placeholder="New stage name…"
+                onSubmitEditing={addStage}
+                returnKeyType="done"
+              />
+            </View>
+            <Pressable
+              onPress={addStage}
+              disabled={!newStage.trim()}
+              hitSlop={8}
+              className="h-10 w-10 items-center justify-center rounded-md border border-border active:bg-accent"
+            >
+              <Icon icon={Plus} size={18} color={colors.foreground} />
+            </Pressable>
+          </View>
         </View>
       </View>
 

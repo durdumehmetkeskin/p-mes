@@ -4,15 +4,17 @@ import {
   IsNumber,
   IsOptional,
   IsString,
-  IsUUID,
   MaxLength,
   Min,
+  MinLength,
 } from 'class-validator';
 
-/** Append a stage (built from a stage type) to an order's process. */
+/** Append a stage to an order's process (types were removed — name only). */
 export class AddProcessStageDto {
-  @IsUUID()
-  stageTypeId: string;
+  @IsString()
+  @MinLength(1)
+  @MaxLength(255)
+  name: string;
 
   @IsOptional()
   @Type(() => Number)
@@ -34,11 +36,6 @@ export class AddProcessStageDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   estimatedDurationHours?: number;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(255)
-  name?: string;
 
   @IsOptional()
   @IsString()

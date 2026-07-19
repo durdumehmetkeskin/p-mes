@@ -218,6 +218,7 @@ export function StageInputProductsPanel({
   orderId,
   predecessorStageIds = [],
   ioPredecessorStageIds = [],
+  canEdit = false,
 }: {
   stageId: string;
   orderId?: string;
@@ -226,6 +227,9 @@ export function StageInputProductsPanel({
   /** Stages whose OUT port is connected to this stage's IN port — their
    *  outputs flow in automatically. */
   ioPredecessorStageIds?: string[];
+  /** Inputs are planned by the process responsible or an admin (backend
+   *  mirrors with a 403); everyone else sees them read-only. */
+  canEdit?: boolean;
 }) {
   const apiUrl = useApiUrl();
   const { has } = usePermissions();
@@ -330,7 +334,7 @@ export function StageInputProductsPanel({
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium">Input products</span>
-        {has("products:consume") && (
+        {canEdit && has("products:consume") && (
           <Button
             size="sm"
             variant="outline"
@@ -429,7 +433,7 @@ export function StageInputProductsPanel({
                   {p.quantity}
                   {p.materialUnit?.name ? ` ${p.materialUnit.name}` : ""}
                 </span>
-                {has("products:consume") && (
+                {canEdit && has("products:consume") && (
                   <Button
                     size="icon"
                     variant="outline"
@@ -581,10 +585,14 @@ export function InheritedInputDocs({
 export function StageProductsPanel({
   stageId,
   onAdd,
+  canAdd = true,
 }: {
   stageId: string;
   /** Opens the shared StageProductDialog owned by the stage detail dialog. */
   onAdd: () => void;
+  /** Recording an output is stage work: this stage's workers, the process
+   *  responsible or an admin (backend mirrors with a 403). */
+  canAdd?: boolean;
 }) {
   const { has } = usePermissions();
   const invalidate = useInvalidate();
@@ -605,12 +613,14 @@ export function StageProductsPanel({
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium">Output products</span>
-        <Can perm="products:create">
-          <Button size="sm" variant="outline" onClick={onAdd}>
-            <Plus className="mr-1 h-4 w-4" />
-            Record product
-          </Button>
-        </Can>
+        {canAdd && (
+          <Can perm="products:create">
+            <Button size="sm" variant="outline" onClick={onAdd}>
+              <Plus className="mr-1 h-4 w-4" />
+              Record product
+            </Button>
+          </Can>
+        )}
       </div>
 
       {query.isLoading ? (

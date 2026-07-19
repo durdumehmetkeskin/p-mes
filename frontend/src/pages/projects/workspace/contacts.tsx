@@ -1,10 +1,9 @@
-import { useCreate, useNotification } from "@refinedev/core";
+import { useCreate, useNotification, useOne } from "@refinedev/core";
 import { Plus, Trash2, UserPlus } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useOutletContext } from "react-router";
 
-import { Can } from "@/components/can";
 import { StatusBadge } from "@/components/refine-ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,6 +25,8 @@ import {
 } from "@/components/ui/select";
 import { axiosInstance } from "@/providers/axios";
 import { ConfirmDelete } from "./confirm-delete";
+import { useCanEditProject } from "@/hooks/use-can-edit-project";
+import { usePermissions } from "@/hooks/use-permissions";
 import type { ProjectContext } from "./project-workspace";
 
 interface ContactRow {
@@ -158,22 +159,37 @@ export const ProjectContacts = () => {
   const { projectId, customerCompanyId } = useOutletContext<ProjectContext>();
   const { open: notify } = useNotification();
 
+  // Customer settings (contact attach/detach) are reserved to admins and the
+  // project's manager (backend mirrors with a 403); members are read-only.
+  const { result: project } = useOne<{ managerUserId: string | null }>({
+    resource: "projects",
+    id: projectId,
+    queryOptions: { enabled: Boolean(projectId) },
+  });
+  const canEditProject = useCanEditProject();
+  const canManageContacts = canEditProject(project?.managerUserId);
+  const { has } = usePermissions();
+
   const [attached, setAttached] = useState<ContactRow[]>([]);
   const [candidates, setCandidates] = useState<ContactRow[]>([]);
   const [picked, setPicked] = useState("");
   const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(async () => {
-    if (!projectId) return;
+    // Reads are manager/admin-only on the backend too — don't even try
+    // for plain members (the section renders a notice instead).
+    if (!projectId || !canManageContacts) return;
     const [a, c] = await Promise.all([
-      axiosInstance.get<ContactRow[]>(`/projects/${projectId}/contacts`),
+      axiosInstance
+        .get<ContactRow[]>(`/projects/${projectId}/contacts`)
+        .catch(() => ({ data: [] as ContactRow[] })),
       axiosInstance
         .get<ContactRow[]>(`/projects/${projectId}/assignable-contacts`)
         .catch(() => ({ data: [] as ContactRow[] })),
     ]);
     setAttached(a.data);
     setCandidates(c.data);
-  }, [projectId]);
+  }, [projectId, canManageContacts]);
 
   useEffect(() => {
     void refresh();
@@ -205,6 +221,16 @@ export const ProjectContacts = () => {
     await refresh();
   };
 
+  if (!canManageContacts) {
+    return (
+      <Card>
+        <CardContent className="pt-6 text-sm text-muted-foreground">
+          Bu bölümü yalnızca proje yöneticisi veya admin görüntüleyebilir.
+        </CardContent>
+      </Card>
+    );
+  }
+
   if (!customerCompanyId) {
     return (
       <Card>
@@ -220,7 +246,7 @@ export const ProjectContacts = () => {
       <CardHeader>
         <CardTitle className="flex flex-wrap items-center justify-between gap-2 text-base">
           <span>Contacts ({attached.length})</span>
-          <Can perm="projects:manage-contacts">
+          {canManageContacts && (
             <div className="flex items-center gap-2">
               <Select value={picked} onValueChange={setPicked}>
                 <SelectTrigger className="w-64">
@@ -249,12 +275,14 @@ export const ProjectContacts = () => {
                 <UserPlus className="mr-1 h-4 w-4" />
                 Attach
               </Button>
-              <NewContactDialog
-                customerId={customerCompanyId}
-                onCreated={(id) => attach(id)}
-              />
+              {has("contacts:create") && (
+                <NewContactDialog
+                  customerId={customerCompanyId}
+                  onCreated={(id) => attach(id)}
+                />
+              )}
             </div>
-          </Can>
+          )}
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -291,7 +319,7 @@ export const ProjectContacts = () => {
                   </td>
                   <td className="py-2">
                     <div className="flex justify-end">
-                      <Can perm="projects:manage-contacts">
+                      {canManageContacts && (
                         <ConfirmDelete
                           title="Remove from project?"
                           description={`"${c.firstName} ${c.lastName}" will be detached from this project. The contact itself is kept.`}
@@ -307,7 +335,7 @@ export const ProjectContacts = () => {
                             </Button>
                           }
                         />
-                      </Can>
+                      )}
                     </div>
                   </td>
                 </tr>

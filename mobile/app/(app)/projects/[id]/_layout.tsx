@@ -15,8 +15,6 @@ export default function ProjectWorkspaceStack() {
       <Stack.Screen name="order-new" options={modal} />
       <Stack.Screen name="order-item-new" options={modal} />
       <Stack.Screen name="process-new" options={modal} />
-      <Stack.Screen name="category-new" options={modal} />
-      <Stack.Screen name="stage-type-new" options={modal} />
       <Stack.Screen name="required-material-new" options={modal} />
       <Stack.Screen name="contact-new" options={modal} />
       <Stack.Screen name="reorder-stages" options={modal} />

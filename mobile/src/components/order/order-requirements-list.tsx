@@ -5,6 +5,7 @@ import {
   useDelete,
   useInvalidate,
   useList,
+  useOne,
 } from "@refinedev/core";
 import {
   AlertTriangle,
@@ -18,10 +19,10 @@ import {
 } from "lucide-react-native";
 import { useRouter } from "expo-router";
 
-import { Can } from "@/components/can";
 import { confirmDelete } from "@/components/refine-ui/confirm";
 import { Icon } from "@/components/ui/icon";
 import { axiosInstance } from "@/providers/axios";
+import { useCanEditProject } from "@/hooks/use-can-edit-project";
 import { colors } from "@/lib/theme";
 
 /** Reservation state of a requirement row, derived from the server totals. */
@@ -79,6 +80,15 @@ export function OrderRequirementsList({
   projectId: string;
   orderId: string;
 }) {
+  // Editing the requirements list is reserved to admins and the project's
+  // manager (backend mirrors with a 403); members are read-only.
+  const { result: reqProject } = useOne<{ managerUserId?: string | null }>({
+    resource: "projects",
+    id: projectId,
+    queryOptions: { enabled: Boolean(projectId) },
+  });
+  const canEditProject = useCanEditProject();
+  const canManage = canEditProject(reqProject?.managerUserId);
   const router = useRouter();
   const invalidate = useInvalidate();
   const { mutate: remove } = useDelete();
@@ -133,7 +143,7 @@ export function OrderRequirementsList({
         <Text className="font-sans-semibold text-sm text-card-foreground">
           Required materials{rows.length ? ` (${rows.length})` : ""}
         </Text>
-        <Can resource="projects" action="update">
+        {canManage && (
           <Pressable
             onPress={() =>
               router.push(
@@ -145,7 +155,7 @@ export function OrderRequirementsList({
           >
             <Icon icon={Plus} size={18} color={colors.foreground} />
           </Pressable>
-        </Can>
+        )}
       </View>
       {rows.length === 0 ? (
         <Text className="p-3 text-sm text-muted-foreground">
@@ -164,6 +174,7 @@ export function OrderRequirementsList({
               <View className="flex-row items-center justify-between">
                 <Pressable
                   className="flex-1"
+                  disabled={!canManage}
                   onPress={() =>
                     router.push(
                       `/projects/${projectId}/required-material-new?editId=${r.id}&orderId=${orderId}`,
@@ -188,7 +199,7 @@ export function OrderRequirementsList({
                   </Text>
                 </View>
                 <StatusIcon r={r} />
-                <Can resource="projects" action="update">
+                {canManage && (
                   <Pressable
                     onPress={() =>
                       confirmDelete(
@@ -208,7 +219,7 @@ export function OrderRequirementsList({
                   >
                     <Icon icon={Trash2} size={15} color={colors.destructive} />
                   </Pressable>
-                </Can>
+                )}
               </View>
               {s.shortage ? (
                 <Text className="text-xs" style={{ color: colors.destructive }}>

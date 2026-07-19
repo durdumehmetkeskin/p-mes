@@ -186,7 +186,6 @@ export class ProjectReportDataSource implements ReportDataSourceProvider {
         if (p.overallStatus === 'completed') orderCompletedProcesses += 1;
 
         return {
-          category: p.category?.name ?? null,
           status: p.overallStatus,
           responsible: p.responsibleUser?.name ?? null,
           totalStages: pTotal,

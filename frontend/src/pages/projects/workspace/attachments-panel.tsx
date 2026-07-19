@@ -10,6 +10,8 @@ import { FileViewerDialog, isViewable } from "./file-viewer-dialog";
 export type AttachmentOwnerType =
   | "project"
   | "process"
+  // A line item of an order (ownerId is the order item id).
+  | "order_item"
   | "stage"
   // A stage's input/output documents (ownerId is the stage id).
   | "stage_input"
@@ -34,10 +36,19 @@ export function AttachmentsPanel({
   ownerType,
   ownerId,
   title = "Attachments",
+  canUpload,
+  canDelete,
 }: {
   ownerType: AttachmentOwnerType;
   ownerId: string;
   title?: string;
+  /**
+   * Relationship-based overrides for the permission-key gates (e.g. stage
+   * INPUT documents are managed only by the process responsible/admin).
+   * Leave undefined to keep the default attachments:create/delete gating.
+   */
+  canUpload?: boolean;
+  canDelete?: boolean;
 }) {
   const [items, setItems] = useState<Attachment[]>([]);
   const [busy, setBusy] = useState(false);
@@ -103,17 +114,23 @@ export function AttachmentsPanel({
             if (f) void onUpload(f);
           }}
         />
-        <Can perm="attachments:create">
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={busy}
-            onClick={() => inputRef.current?.click()}
-          >
-            <Upload className="mr-1 h-4 w-4" />
-            {busy ? "Uploading..." : "Upload"}
-          </Button>
-        </Can>
+        {(() => {
+          const uploadButton = (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => inputRef.current?.click()}
+            >
+              <Upload className="mr-1 h-4 w-4" />
+              {busy ? "Uploading..." : "Upload"}
+            </Button>
+          );
+          if (canUpload === undefined) {
+            return <Can perm="attachments:create">{uploadButton}</Can>;
+          }
+          return canUpload ? uploadButton : null;
+        })()}
       </div>
 
       {items.length ? (
@@ -149,23 +166,29 @@ export function AttachmentsPanel({
                 >
                   <Download className="h-4 w-4" />
                 </Button>
-                <Can perm="attachments:delete">
-                  <ConfirmDelete
-                    title="Delete file?"
-                    description={`"${att.fileName}" will be permanently removed.`}
-                    onConfirm={() => void onDelete(att.id)}
-                    trigger={
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="text-destructive"
-                        aria-label="Delete"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    }
-                  />
-                </Can>
+                {(() => {
+                  const deleteControl = (
+                    <ConfirmDelete
+                      title="Delete file?"
+                      description={`"${att.fileName}" will be permanently removed.`}
+                      onConfirm={() => void onDelete(att.id)}
+                      trigger={
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="text-destructive"
+                          aria-label="Delete"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      }
+                    />
+                  );
+                  if (canDelete === undefined) {
+                    return <Can perm="attachments:delete">{deleteControl}</Can>;
+                  }
+                  return canDelete ? deleteControl : null;
+                })()}
               </div>
             </li>
           ))}

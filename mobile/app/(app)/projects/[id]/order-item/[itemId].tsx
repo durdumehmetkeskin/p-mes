@@ -2,12 +2,15 @@ import { ScrollView, View } from "react-native";
 import { type BaseRecord, useOne } from "@refinedev/core";
 import { useLocalSearchParams, useRouter } from "expo-router";
 
+import { AttachmentsPanel } from "@/components/attachments/attachments-panel";
 import { DetailActions } from "@/components/refine-ui/detail-actions";
 import { FieldRow, SectionLabel } from "@/components/refine-ui/field-row";
 import { Screen } from "@/components/refine-ui/screen";
 import { Skeleton } from "@/components/ui/skeleton";
 import { humanizeStatus } from "@/components/project/detail-config";
 import { OrderProcesses } from "@/components/project/process-engine";
+import { useCanEditProject } from "@/hooks/use-can-edit-project";
+import { usePermissions } from "@/hooks/use-permissions";
 
 interface OrderItem extends BaseRecord {
   id: string;
@@ -29,6 +32,15 @@ export default function OrderItemDetailScreen() {
     id: itemId,
   });
   const item = result;
+  // Item files are managed only by an admin or the project's manager
+  // (backend mirrors with a 403); members read/download only.
+  const { result: project } = useOne<{ managerUserId?: string | null }>({
+    resource: "projects",
+    id: id as string,
+    queryOptions: { enabled: Boolean(id) },
+  });
+  const canEditProject = useCanEditProject();
+  const { has } = usePermissions();
 
   return (
     <Screen
@@ -63,6 +75,15 @@ export default function OrderItemDetailScreen() {
             projectId={id as string}
             orderItemId={itemId as string}
             orderId={orderId as string}
+          />
+
+          <AttachmentsPanel
+            ownerType="order_item"
+            ownerId={itemId as string}
+            canUpload={
+              canEditProject(project?.managerUserId) &&
+              has("attachments:create")
+            }
           />
         </ScrollView>
       )}

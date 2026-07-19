@@ -72,9 +72,13 @@ export class SectionReservationsController {
     return this.service.findOne(id, user);
   }
 
-  @RequirePermissions('section-reservations:create')
+  // No @RequirePermissions on the mutations below: the service authorizes
+  // admin ∨ section-reservations:* key holders ∨ (stage-linked rows) the
+  // owning PROCESS RESPONSIBLE, who plans their process without a global key.
   @Post()
-  @ApiOperation({ summary: 'Reserve a section for an order' })
+  @ApiOperation({
+    summary: 'Reserve a section for an order (responsible/key/admin)',
+  })
   create(
     @Body() dto: CreateSectionReservationDto,
     @CurrentUser() user: User,
@@ -82,7 +86,6 @@ export class SectionReservationsController {
     return this.service.create(dto, user);
   }
 
-  @RequirePermissions('section-reservations:update')
   @Patch(':id')
   @ApiOperation({ summary: 'Update a reservation' })
   update(
@@ -93,7 +96,6 @@ export class SectionReservationsController {
     return this.service.update(id, dto, user);
   }
 
-  @RequirePermissions('section-reservations:delete')
   @Delete(':id')
   @HttpCode(204)
   @ApiOperation({ summary: 'Delete a reservation' })

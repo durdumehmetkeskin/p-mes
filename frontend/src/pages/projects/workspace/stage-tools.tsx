@@ -14,8 +14,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Can } from "@/components/can";
 import { useIsAdmin } from "@/hooks/use-is-admin";
+import { usePermissions } from "@/hooks/use-permissions";
 import { axiosInstance } from "@/providers/axios";
 import {
   DaySlotStrip,
@@ -69,9 +69,13 @@ export function StageTools({
   stageCompleted,
   windowStart,
   windowEnd,
+  canManage = false,
 }: {
   stageId: string;
   stageCompleted: boolean;
+  /** Reserve/re-date/remove tool reservations — process responsible or
+   *  admin (backend also honors the reserve-tools key). */
+  canManage?: boolean;
   /** Stage date window (YYYY-MM-DD) — reservations exist only inside it. */
   windowStart?: string | null;
   windowEnd?: string | null;
@@ -79,18 +83,24 @@ export function StageTools({
   const apiUrl = useApiUrl();
   const isAdmin = useIsAdmin();
   const { open: notify } = useNotification();
+  // Everything here reads tools:read-guarded data — don't even ask without
+  // the key (a plain member would just collect 403s in the console).
+  const { has } = usePermissions();
+  const canReadTools = has("tools:read");
+  // Reservation mutations: responsible/admin (prop) or legacy key holders.
+  const canReserve = canManage || has("process-stages:reserve-tools");
   const { result, query } = useCustom<ToolReservation[]>({
     url: `${apiUrl}/process-stages/${stageId}/tool-reservations`,
     method: "get",
     errorNotification: false,
-    queryOptions: { retry: false },
+    queryOptions: { retry: false, enabled: canReadTools },
   });
   const reservations = Array.isArray(result?.data) ? result.data : [];
   const { result: tools } = useList<ToolOpt>({
     resource: "tools",
     pagination: { mode: "off" },
     errorNotification: false,
-    queryOptions: { retry: false },
+    queryOptions: { retry: false, enabled: canReadTools },
   });
 
   const [toolId, setToolId] = useState("");
@@ -118,7 +128,7 @@ export function StageTools({
     url: `${apiUrl}/tools/${toolId}/reservations`,
     method: "get",
     errorNotification: false,
-    queryOptions: { retry: false, enabled: Boolean(toolId) },
+    queryOptions: { retry: false, enabled: Boolean(toolId) && canReadTools },
   });
   const taken = useMemo(
     () =>
@@ -289,6 +299,10 @@ export function StageTools({
     return null;
   };
 
+  // Without tools:read there is nothing to show — hide the whole panel
+  // instead of rendering an empty skeleton.
+  if (!canReadTools) return null;
+
   return (
     <div className="space-y-3 rounded-md border p-3">
       <div className="text-sm font-medium">Reserved tools</div>
@@ -334,27 +348,29 @@ export function StageTools({
                       Scan QR to hand over
                     </span>
                   ) : null}
-                  <Can perm="process-stages:reserve-tools">
-                    {r.status === "reserved" && (
+                  {canReserve && (
+                    <>
+                      {r.status === "reserved" && (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7"
+                          title="Re-date reservation"
+                          onClick={() => startEdit(r)}
+                        >
+                          <CalendarClock className="h-4 w-4" />
+                        </Button>
+                      )}
                       <Button
                         size="icon"
                         variant="ghost"
                         className="h-7 w-7"
-                        title="Re-date reservation"
-                        onClick={() => startEdit(r)}
+                        onClick={() => void remove(r.id)}
                       >
-                        <CalendarClock className="h-4 w-4" />
+                        <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
-                    )}
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-7 w-7"
-                      onClick={() => void remove(r.id)}
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  </Can>
+                    </>
+                  )}
                 </div>
               </li>
             );
@@ -362,7 +378,7 @@ export function StageTools({
         </ul>
       )}
 
-      <Can perm="process-stages:reserve-tools">
+      {canReserve && (
         <div className="space-y-3 border-t pt-3">
           <div className="flex items-center gap-2">
             <Label className="text-sm font-medium">
@@ -518,7 +534,7 @@ export function StageTools({
             </>
           )}
         </div>
-      </Can>
+      )}
     </div>
   );
 }

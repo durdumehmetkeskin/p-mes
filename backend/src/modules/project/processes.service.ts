@@ -118,20 +118,13 @@ export class ProcessesService {
     if (dto.templateId) {
       template = await this.templates.findOne({
         where: { id: dto.templateId },
-        relations: { stages: { stageType: true } },
+        relations: { stages: true },
       });
       if (!template) {
         throw new NotFoundException(
           `Workflow template ${dto.templateId} not found`,
         );
       }
-    }
-
-    const categoryId = dto.categoryId ?? template?.categoryId;
-    if (!categoryId) {
-      throw new BadRequestException(
-        'categoryId is required when no template is given',
-      );
     }
 
     const requireEstimates = dto.requireEstimates ?? false;
@@ -163,7 +156,6 @@ export class ProcessesService {
     const processId = await this.dataSource.transaction(async (manager) => {
       const process = manager.create(Process, {
         orderItemId: orderItem.id,
-        categoryId,
         usedTemplateId: template?.id ?? null,
         overallStatus: ProcessStatus.Draft,
         requireEstimates,
@@ -183,15 +175,13 @@ export class ProcessesService {
       for (let i = 0; i < templateStages.length; i += 1) {
         const ts = templateStages[i];
         const est = dto.stageEstimates?.[i];
-        // Independent copy: snapshot name/input/output from the template
-        // stage (falling back to the stage type's defaults).
+        // Independent copy: snapshot name/input/output from the template stage.
         const stage = manager.create(ProcessStage, {
           processId: savedProcess.id,
-          stageTypeId: ts.stageTypeId,
           sequence: ts.sequence,
-          name: ts.name ?? ts.stageType?.name ?? 'Stage',
-          input: ts.input ?? ts.stageType?.defaultInput ?? null,
-          output: ts.output ?? ts.stageType?.defaultOutput ?? null,
+          name: ts.name ?? 'Stage',
+          input: ts.input ?? null,
+          output: ts.output ?? null,
           status: ProcessStageStatus.Pending,
           estimatedStartDate: est?.estimatedStartDate ?? null,
           estimatedCompletedDate: est?.estimatedCompletedDate ?? null,

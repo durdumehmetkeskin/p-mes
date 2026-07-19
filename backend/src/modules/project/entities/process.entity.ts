@@ -12,7 +12,6 @@ import { User } from '../../users/entities/user.entity';
 import { ProcessStatus } from '../enums/process-status.enum';
 import { OrderItem } from './order-item.entity';
 import { ProcessStage } from './process-stage.entity';
-import { StageTypeCategory } from './stage-type-category.entity';
 import { WorkflowTemplate } from './workflow-template.entity';
 
 /**
@@ -32,18 +31,6 @@ export class Process extends BaseEntity {
   @Index()
   @Column({ type: 'uuid', name: 'order_item_id' })
   orderItemId: string;
-
-  @ManyToOne(() => StageTypeCategory, {
-    eager: true,
-    nullable: false,
-    onDelete: 'RESTRICT',
-  })
-  @JoinColumn({ name: 'category_id' })
-  category: StageTypeCategory;
-
-  @Index()
-  @Column({ type: 'uuid', name: 'category_id' })
-  categoryId: string;
 
   // The template this process was generated from (informational only; SET NULL
   // so deleting the template never affects the process). Independence is

@@ -1,11 +1,10 @@
 import {
   useCreate,
   useInvalidate,
-  useList,
   useOne,
   useUpdate,
 } from "@refinedev/core";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Control, FieldErrors, UseFormRegister } from "react-hook-form";
 import { useForm } from "react-hook-form";
 import { useOutletContext } from "react-router";
@@ -27,6 +26,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useCanEditProject } from "@/hooks/use-can-edit-project";
+import { usePermissions } from "@/hooks/use-permissions";
+import { axiosInstance } from "@/providers/axios";
 import { CustomerFormFields } from "../../customers/customer-form-fields";
 import type { ProjectContext } from "./project-workspace";
 
@@ -74,10 +76,18 @@ function SetCustomerDialog({
   const { mutate: updateProject } = useUpdate();
   const { mutate: createCompany } = useCreate();
   const invalidate = useInvalidate();
-  const { result: companies } = useList<CompanyOpt>({
-    resource: "customers",
-    pagination: { mode: "off" },
-  });
+  const { has } = usePermissions();
+  // Options come from the project-scoped endpoint so a non-admin manager
+  // needs no global customers:read key.
+  const [companies, setCompanies] = useState<CompanyOpt[]>([]);
+  useEffect(() => {
+    axiosInstance
+      .get<CompanyOpt[]>(`/projects/${projectId}/customer-options`)
+      .then((r) => setCompanies(r.data))
+      .catch(() => setCompanies([]));
+  }, [projectId]);
+  // Creating a brand-new customer needs the global customers:create key.
+  const canCreateCompany = has("customers:create");
 
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<"existing" | "new">("existing");
@@ -151,14 +161,16 @@ function SetCustomerDialog({
           >
             Existing
           </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={mode === "new" ? "default" : "outline"}
-            onClick={() => setMode("new")}
-          >
-            New customer
-          </Button>
+          {canCreateCompany && (
+            <Button
+              type="button"
+              size="sm"
+              variant={mode === "new" ? "default" : "outline"}
+              onClick={() => setMode("new")}
+            >
+              New customer
+            </Button>
+          )}
         </div>
 
         {mode === "existing" ? (
@@ -170,7 +182,7 @@ function SetCustomerDialog({
                   <SelectValue placeholder="Select a customer" />
                 </SelectTrigger>
                 <SelectContent>
-                  {(companies?.data ?? []).map((c) => (
+                  {companies.map((c) => (
                     <SelectItem key={c.id} value={c.id}>
                       {c.code} · {c.name}
                     </SelectItem>
@@ -206,21 +218,43 @@ function SetCustomerDialog({
 export const ProjectCustomer = () => {
   const { projectId, customerCompanyId } = useOutletContext<ProjectContext>();
 
-  const { result: company } = useOne<CompanyRecord>({
-    resource: "customers",
-    id: customerCompanyId ?? "",
-    queryOptions: { enabled: Boolean(customerCompanyId) },
+  // The Customer section is visible ONLY to admins and the project's manager
+  // (backend serves it via /projects/:id/customer with the same rule).
+  const { result: project } = useOne<{ managerUserId: string | null }>({
+    resource: "projects",
+    id: projectId,
+    queryOptions: { enabled: Boolean(projectId) },
   });
+  const canEditProject = useCanEditProject();
+  const canManageCustomer = canEditProject(project?.managerUserId);
 
-  const { result: contacts } = useList<ContactRow>({
-    resource: "contacts",
-    filters: [
-      { field: "customerId", operator: "eq", value: customerCompanyId },
-    ],
-    pagination: { mode: "off" },
-    queryOptions: { enabled: Boolean(customerCompanyId) },
-  });
-  const contactRows = contacts?.data ?? [];
+  const [company, setCompany] = useState<CompanyRecord | null>(null);
+  const [contactRows, setContactRows] = useState<ContactRow[]>([]);
+  useEffect(() => {
+    if (!projectId || !canManageCustomer) return;
+    axiosInstance
+      .get<{ company: CompanyRecord | null; contacts: ContactRow[] }>(
+        `/projects/${projectId}/customer`,
+      )
+      .then((r) => {
+        setCompany(r.data.company);
+        setContactRows(r.data.contacts);
+      })
+      .catch(() => {
+        setCompany(null);
+        setContactRows([]);
+      });
+  }, [projectId, canManageCustomer, customerCompanyId]);
+
+  if (!canManageCustomer) {
+    return (
+      <Card>
+        <CardContent className="pt-6 text-sm text-muted-foreground">
+          Bu bölümü yalnızca proje yöneticisi veya admin görüntüleyebilir.
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -228,7 +262,12 @@ export const ProjectCustomer = () => {
         <CardHeader>
           <CardTitle className="flex items-center justify-between text-base">
             <span>Customer</span>
-            <SetCustomerDialog projectId={projectId} current={customerCompanyId} />
+            {canManageCustomer && (
+              <SetCustomerDialog
+                projectId={projectId}
+                current={customerCompanyId}
+              />
+            )}
           </CardTitle>
         </CardHeader>
         <CardContent>

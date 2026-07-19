@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -8,6 +9,7 @@ import { randomUUID } from 'crypto';
 import type { Readable } from 'stream';
 import { Repository } from 'typeorm';
 import { MinioService } from '../storage/minio.service';
+import { OrderItem } from '../project/entities/order-item.entity';
 import { Process } from '../project/entities/process.entity';
 import { ProcessStage } from '../project/entities/process-stage.entity';
 import { ProjectsService } from '../project/projects.service';
@@ -20,6 +22,8 @@ export class AttachmentsService {
   constructor(
     @InjectRepository(Attachment)
     private readonly repo: Repository<Attachment>,
+    @InjectRepository(OrderItem)
+    private readonly orderItems: Repository<OrderItem>,
     @InjectRepository(Process)
     private readonly processes: Repository<Process>,
     @InjectRepository(ProcessStage)
@@ -37,6 +41,11 @@ export class AttachmentsService {
     if (ownerType === AttachmentOwnerType.Process) {
       const p = await this.processes.findOne({ where: { id: ownerId } });
       return p?.orderItem?.order?.projectId ?? null;
+    }
+    if (ownerType === AttachmentOwnerType.OrderItem) {
+      // OrderItem eager-loads its order; the order carries the project FK.
+      const item = await this.orderItems.findOne({ where: { id: ownerId } });
+      return item?.order?.projectId ?? null;
     }
     // Stage / stage_input / stage_output all own a ProcessStage id:
     // stage → its process → order item → order → project.
@@ -61,6 +70,75 @@ export class AttachmentsService {
     }
   }
 
+  /**
+   * Stage-scoped document authz (project/process docs stay member-wide):
+   * - stage_input: part of the stage's PLAN — only the owning process's
+   *   responsible user or an admin (stage workers only record outputs).
+   * - stage / stage_output: acting on a stage — only that stage's workers,
+   *   the process responsible or an admin; other members are view-only.
+   */
+  private async assertStageDocEditor(
+    ownerType: AttachmentOwnerType,
+    stageId: string,
+    user?: User,
+  ): Promise<void> {
+    const stageScoped =
+      ownerType === AttachmentOwnerType.Stage ||
+      ownerType === AttachmentOwnerType.StageInput ||
+      ownerType === AttachmentOwnerType.StageOutput;
+    if (!stageScoped) return;
+    if (!user || ProjectsService.isAdmin(user)) return;
+    // stage.workers is an eager relation on ProcessStage.
+    const stage = await this.stages.findOne({ where: { id: stageId } });
+    const process = stage
+      ? await this.processes.findOne({ where: { id: stage.processId } })
+      : null;
+    const isResponsible = process?.responsibleUserId === user.id;
+    if (ownerType === AttachmentOwnerType.StageInput) {
+      if (!isResponsible) {
+        throw new ForbiddenException(
+          'Girdi dokümanlarını yalnızca proses sorumlusu veya admin yönetebilir.',
+        );
+      }
+      return;
+    }
+    const isWorker = (stage?.workers ?? []).some((w) => w.id === user.id);
+    if (!isResponsible && !isWorker) {
+      throw new ForbiddenException(
+        'Bu aşamanın dokümanlarını yalnızca aşama çalışanı, proses sorumlusu veya admin yönetebilir.',
+      );
+    }
+  }
+
+  /**
+   * PROJECT, ORDER-ITEM and PROCESS documents are managed only by an admin or
+   * the project's manager — plain members read/download them but cannot
+   * add/remove. (Stage docs have their own worker/responsible rule above.)
+   */
+  private async assertProjectDocEditor(
+    ownerType: AttachmentOwnerType,
+    ownerId: string,
+    user?: User,
+  ): Promise<void> {
+    if (
+      ownerType !== AttachmentOwnerType.Project &&
+      ownerType !== AttachmentOwnerType.OrderItem &&
+      ownerType !== AttachmentOwnerType.Process
+    ) {
+      return;
+    }
+    if (!user || ProjectsService.isAdmin(user)) return;
+    const projectId = await this.resolveProjectId(ownerType, ownerId);
+    const project = projectId
+      ? await this.projects.findOne(projectId)
+      : null;
+    if (project?.managerUserId !== user.id) {
+      throw new ForbiddenException(
+        'Bu dosyaları yalnızca proje yöneticisi veya admin yönetebilir.',
+      );
+    }
+  }
+
   async upload(
     ownerType: AttachmentOwnerType,
     ownerId: string,
@@ -69,6 +147,8 @@ export class AttachmentsService {
   ): Promise<Attachment> {
     // Non-members cannot upload into a project they don't belong to (404).
     await this.assertOwnerAccess(ownerType, ownerId, user);
+    await this.assertStageDocEditor(ownerType, ownerId, user);
+    await this.assertProjectDocEditor(ownerType, ownerId, user);
     if (!file) throw new BadRequestException('A file is required.');
     // multer decodes the filename as latin1; restore UTF-8 (Turkish names etc).
     const fileName = Buffer.from(file.originalname, 'latin1').toString('utf8');
@@ -122,6 +202,16 @@ export class AttachmentsService {
     const attachment = await this.findOne(id);
     // Same membership scoping as reads/uploads (non-members 404).
     await this.assertOwnerAccess(
+      attachment.ownerType,
+      attachment.ownerId,
+      user,
+    );
+    await this.assertStageDocEditor(
+      attachment.ownerType,
+      attachment.ownerId,
+      user,
+    );
+    await this.assertProjectDocEditor(
       attachment.ownerType,
       attachment.ownerId,
       user,

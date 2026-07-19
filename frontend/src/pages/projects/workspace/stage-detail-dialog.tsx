@@ -3,8 +3,8 @@ import { Pencil } from "lucide-react";
 import { useState } from "react";
 
 import { StatusBadge } from "@/components/refine-ui/status-badge";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -57,7 +57,6 @@ export interface StageData {
   estimatedStartDate: string | null;
   estimatedCompletedDate: string | null;
   estimatedDurationHours: number | null;
-  stageType: { code: string; name: string } | null;
   // Work directives — written only by the stage responsible or an admin.
   directives?: string | null;
 }
@@ -88,6 +87,10 @@ export function StageDetailDialog({
   const apiUrl = useApiUrl();
   const { mutate } = useCustomMutation();
   const [busy, setBusy] = useState(false);
+  // Completing REQUIRES a manually entered duration (backend rejects
+  // otherwise) — the Completed buttons open this inline prompt first.
+  const [completeOpen, setCompleteOpen] = useState(false);
+  const [durationInput, setDurationInput] = useState("");
   const [editOpen, setEditOpen] = useState(false);
   const [productOpen, setProductOpen] = useState(false);
   // Whether the product dialog was auto-opened by completing the stage.
@@ -101,11 +104,18 @@ export function StageDetailDialog({
   // Directives: the process responsible or an admin (backend mirrors).
   const isAdmin = useIsAdmin();
   const canEditDirectives = isAdmin || canEditStage;
+  // Inputs (products + input documents) are PLANNED by the process
+  // responsible or an admin; stage workers only record outputs (backend
+  // mirrors with a 403).
+  const canEditInputs = isAdmin || canEditStage;
   // Status rights (backend mirrors): admin/process responsible = every
   // transition; a stage worker = start + complete on their own stage only.
   const canStatusAll = isAdmin || canEditStage;
   const canStatusWorker =
     !!identity?.id && (stage.workers ?? []).some((w) => w.id === identity.id);
+  // Acting on THIS stage (outputs, stage documents): its workers, the process
+  // responsible or an admin — other members are view-only (backend mirrors).
+  const canActOnStage = isAdmin || canEditStage || canStatusWorker;
   // Stages whose OUT port is connected to this stage's IN port — their
   // output products/documents flow in as this stage's inputs.
   const siblingName = new Map(siblings.map((s) => [s.id, s.name]));
@@ -117,13 +127,26 @@ export function StageDetailDialog({
     }));
   const status = stage.status;
 
-  const setStatus = (next: string) => {
+  const openComplete = () => {
+    setDurationInput(
+      stage.durationHours != null ? String(stage.durationHours) : "",
+    );
+    setCompleteOpen(true);
+  };
+  const confirmComplete = () => {
+    const hours = Number(durationInput);
+    if (!Number.isFinite(hours) || hours <= 0) return;
+    setCompleteOpen(false);
+    setStatus("completed", { durationHours: hours });
+  };
+
+  const setStatus = (next: string, extra?: Record<string, unknown>) => {
     setBusy(true);
     mutate(
       {
         url: `${apiUrl}/process-stages/${stage.id}/status`,
         method: "patch",
-        values: { status: next },
+        values: { status: next, ...(extra ?? {}) },
       },
       {
         onSuccess: () => {
@@ -149,9 +172,6 @@ export function StageDetailDialog({
             <span>
               {stage.sequence}. {stage.name}
             </span>
-            {stage.stageType && (
-              <Badge variant="outline">{stage.stageType.code}</Badge>
-            )}
             <StatusBadge label={String(status).replace(/_/g, " ")} />
             {canEditStage && (
               <Button
@@ -167,45 +187,92 @@ export function StageDetailDialog({
           </DialogTitle>
         </DialogHeader>
 
-        {/* Status controls (sequential gating enforced by the backend) */}
-        <div className="flex flex-wrap items-center gap-2 rounded-md border p-3">
-          <span className="text-sm font-medium">Status:</span>
+        {/* Status controls — the work actions are big full-width buttons
+            (sequential gating enforced by the backend). */}
+        <div className="flex flex-col gap-2 rounded-md border p-3">
           {status === "pending" && (canStatusAll || canStatusWorker) && (
-            <Button size="sm" disabled={!unlocked || busy} onClick={() => setStatus("in_progress")}>
+            <Button
+              size="lg"
+              className="w-full text-base font-semibold"
+              disabled={!unlocked || busy}
+              onClick={() => setStatus("in_progress")}
+            >
               Start
             </Button>
           )}
-          {status === "in_progress" && (
-            <>
-              {(canStatusAll || canStatusWorker) && (
-                <Button size="sm" disabled={busy} onClick={() => setStatus("completed")}>
-                  Mark complete
-                </Button>
-              )}
-              {canStatusAll && (
-                <Button size="sm" variant="outline" disabled={busy} onClick={() => setStatus("pending")}>
-                  Reset
-                </Button>
-              )}
-            </>
-          )}
-          {/* pending→completed shortcut skips the worker's own start — kept
-              for the responsible/admin only (backend 403s a worker). */}
-          {status === "pending" && canStatusAll && (
+          {status === "in_progress" && (canStatusAll || canStatusWorker) && (
             <Button
-              size="sm"
-              variant="outline"
-              disabled={!unlocked || busy}
-              onClick={() => setStatus("completed")}
+              size="lg"
+              className="w-full text-base font-semibold"
+              disabled={busy}
+              onClick={openComplete}
             >
-              Mark complete
+              Completed
             </Button>
           )}
-          {status === "completed" && canStatusAll && (
-            <Button size="sm" variant="outline" disabled={busy} onClick={() => setStatus("in_progress")}>
-              Reopen
-            </Button>
+          {/* Completing requires the worked duration — entered right here. */}
+          {completeOpen && (
+            <div className="flex flex-wrap items-end gap-2 rounded-md border bg-muted/30 p-2">
+              <div className="flex flex-col gap-1">
+                <span className="text-xs text-muted-foreground">
+                  Çalışma süresi (saat)
+                </span>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.25"
+                  className="w-36"
+                  autoFocus
+                  value={durationInput}
+                  onChange={(e) => setDurationInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      confirmComplete();
+                    }
+                  }}
+                />
+              </div>
+              <Button
+                size="sm"
+                disabled={busy || !(Number(durationInput) > 0)}
+                onClick={confirmComplete}
+              >
+                Completed
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setCompleteOpen(false)}
+              >
+                Cancel
+              </Button>
+            </div>
           )}
+          {/* Secondary transitions — responsible/admin only. */}
+          <div className="flex flex-wrap gap-2 empty:hidden">
+            {/* pending→completed shortcut skips the worker's own start. */}
+            {status === "pending" && canStatusAll && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!unlocked || busy}
+                onClick={openComplete}
+              >
+                Completed
+              </Button>
+            )}
+            {status === "in_progress" && canStatusAll && (
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => setStatus("pending")}>
+                Reset
+              </Button>
+            )}
+            {status === "completed" && canStatusAll && (
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => setStatus("in_progress")}>
+                Reopen
+              </Button>
+            )}
+          </div>
           {!unlocked && (
             <span className="text-sm text-muted-foreground">
               Locked — complete the prerequisite stages first.
@@ -274,12 +341,15 @@ export function StageDetailDialog({
               (l) => l.fromStageId,
             )}
             ioPredecessorStageIds={ioPredecessors.map((p) => p.id)}
+            canEdit={canEditInputs}
           />
           <InheritedInputDocs stages={ioPredecessors} />
           <AttachmentsPanel
             ownerType="stage_input"
             ownerId={stage.id}
             title="Input documents"
+            canUpload={canEditInputs}
+            canDelete={canEditInputs && has("attachments:delete")}
           />
         </div>
 
@@ -296,6 +366,7 @@ export function StageDetailDialog({
           </div>
           <StageProductsPanel
             stageId={stage.id}
+            canAdd={canActOnStage}
             onAdd={() => {
               setProductPrompted(false);
               setProductOpen(true);
@@ -305,6 +376,7 @@ export function StageDetailDialog({
             ownerType="stage_output"
             ownerId={stage.id}
             title="Output documents"
+            canUpload={canActOnStage && has("attachments:create")}
           />
         </div>
 
@@ -320,6 +392,7 @@ export function StageDetailDialog({
             Reservations live inside the stage's date window. */}
         <StageTools
           stageId={stage.id}
+          canManage={canStatusAll}
           stageCompleted={stage.status === "completed"}
           windowStart={
             stage.startedAt?.slice(0, 10) ?? stage.estimatedStartDate ?? null
@@ -331,10 +404,11 @@ export function StageDetailDialog({
           }
         />
 
-        <Can perm="section-reservations:create">
+        {(canStatusAll || has("section-reservations:create")) && (
           <StageReservation
             stageId={stage.id}
             orderId={orderId}
+            canManage={canStatusAll}
             windowStart={
               stage.startedAt?.slice(0, 10) ?? stage.estimatedStartDate ?? null
             }
@@ -345,10 +419,14 @@ export function StageDetailDialog({
             }
             onChanged={onChanged}
           />
-        </Can>
+        )}
 
         <div className="rounded-md border p-3">
-          <AttachmentsPanel ownerType="stage" ownerId={stage.id} />
+          <AttachmentsPanel
+            ownerType="stage"
+            ownerId={stage.id}
+            canUpload={canActOnStage && has("attachments:create")}
+          />
         </div>
       </DialogContent>
 

@@ -5,23 +5,26 @@ import { useMemo } from "react";
 import { Link } from "react-router";
 
 import { DeleteButton } from "@/components/refine-ui/buttons/delete";
-import { EditButton } from "@/components/refine-ui/buttons/edit";
 import { ShowButton } from "@/components/refine-ui/buttons/show";
+import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/refine-ui/data-table/data-table";
 import { StatusBadge } from "@/components/refine-ui/status-badge";
 import { ListView, ListViewHeader } from "@/components/refine-ui/views/list-view";
+import { useCanEditProject } from "@/hooks/use-can-edit-project";
 
 interface ProjectRecord {
   id: string;
   code: string;
   name: string;
   status: string | null;
+  managerUserId: string | null;
   managerUser: { name: string } | null;
   customerCompany: { code: string; name: string } | null;
   orderCount?: number;
 }
 
 export const ProjectsList = () => {
+  const canEditProject = useCanEditProject();
   const columns = useMemo<ColumnDef<ProjectRecord>[]>(
     () => [
       {
@@ -78,9 +81,16 @@ export const ProjectsList = () => {
             <ShowButton size="icon" variant="outline" recordItemId={row.original.id}>
               <Eye className="h-4 w-4" />
             </ShowButton>
-            <EditButton size="icon" variant="outline" recordItemId={row.original.id}>
-              <Pencil className="h-4 w-4" />
-            </EditButton>
+            {/* Editing a project is reserved to admins and its manager. A
+                plain link (not EditButton) so the projects:update permission
+                gate cannot hide it from a non-admin manager. */}
+            {canEditProject(row.original.managerUserId) && (
+              <Button asChild size="icon" variant="outline">
+                <Link to={`/projects/${row.original.id}/edit`}>
+                  <Pencil className="h-4 w-4" />
+                </Link>
+              </Button>
+            )}
             {/* Leaf-first: a project can only be deleted once it has no orders. */}
             {(row.original.orderCount ?? 0) === 0 && (
               <DeleteButton size="icon" recordItemId={row.original.id}>
@@ -91,7 +101,7 @@ export const ProjectsList = () => {
         ),
       },
     ],
-    [],
+    [canEditProject],
   );
 
   const table = useTable<ProjectRecord>({

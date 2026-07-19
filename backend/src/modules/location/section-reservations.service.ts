@@ -1,12 +1,14 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { FindOptionsWhere, In, Repository } from 'typeorm';
 import { Order } from '../project/entities/order.entity';
+import { Process } from '../project/entities/process.entity';
 import { ProcessStage } from '../project/entities/process-stage.entity';
 import { ProjectsService } from '../project/projects.service';
 import type { User } from '../users/entities/user.entity';
@@ -50,11 +52,54 @@ export class SectionReservationsService {
     return { startAt, endAt };
   }
 
+  /** Does any of the user's roles carry the given permission key? */
+  private static hasKey(user: User | undefined, key: string): boolean {
+    return Boolean(
+      user?.roles?.some((r) => (r.permissions ?? []).includes(key)),
+    );
+  }
+
+  /**
+   * Section reservations may be managed by an admin, a holder of the matching
+   * section-reservations:* key (legacy/custom roles), or — for STAGE-linked
+   * rows — the owning PROCESS'S RESPONSIBLE, who plans their own process
+   * without needing a global key.
+   */
+  private async assertReservationEditor(
+    user: User | undefined,
+    key: string,
+    stageId?: string | null,
+  ): Promise<void> {
+    if (!user || ProjectsService.isAdmin(user)) return;
+    if (SectionReservationsService.hasKey(user, key)) return;
+    if (stageId) {
+      const stage = await this.stages.findOne({
+        where: { id: stageId },
+        loadEagerRelations: false,
+      });
+      const process = stage
+        ? await this.stages.manager.getRepository(Process).findOne({
+            where: { id: stage.processId },
+            loadEagerRelations: false,
+          })
+        : null;
+      if (process?.responsibleUserId === user.id) return;
+    }
+    throw new ForbiddenException(
+      'Bölüm rezervasyonunu yalnızca proses sorumlusu, yetkili rol veya admin yönetebilir.',
+    );
+  }
+
   async create(
     dto: CreateSectionReservationDto,
     user?: User,
   ): Promise<SectionReservation> {
     await this.assertOrderAccess(dto.orderId, user);
+    await this.assertReservationEditor(
+      user,
+      'section-reservations:create',
+      dto.stageId,
+    );
     const { startAt, endAt } = SectionReservationsService.composeRange(
       dto.startDate,
       dto.endDate,
@@ -128,6 +173,11 @@ export class SectionReservationsService {
     user?: User,
   ): Promise<SectionReservation> {
     const found = await this.findOne(id, user);
+    await this.assertReservationEditor(
+      user,
+      'section-reservations:update',
+      dto.stageId ?? found.stageId,
+    );
     if (dto.orderId) await this.assertOrderAccess(dto.orderId, user);
     const sectionId = dto.sectionId ?? found.sectionId;
     const startDate = dto.startDate ?? found.startDate;
@@ -164,6 +214,11 @@ export class SectionReservationsService {
 
   async remove(id: string, user?: User): Promise<void> {
     const found = await this.findOne(id, user);
+    await this.assertReservationEditor(
+      user,
+      'section-reservations:delete',
+      found.stageId,
+    );
     await this.repo.softRemove(found);
   }
 

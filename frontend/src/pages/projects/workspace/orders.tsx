@@ -1,4 +1,4 @@
-import { useCreate, useInvalidate, useList } from "@refinedev/core";
+import { useCreate, useInvalidate, useList, useOne } from "@refinedev/core";
 import { Plus } from "lucide-react";
 import { useState } from "react";
 import type { Control, FieldErrors, UseFormRegister } from "react-hook-form";
@@ -15,6 +15,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { useCanEditProject } from "@/hooks/use-can-edit-project";
 import { OrderFormFields } from "../../orders/order-form-fields";
 import type { ProjectContext } from "./project-workspace";
 
@@ -101,6 +102,16 @@ function NewOrderDialog({ projectId }: { projectId: string }) {
 export const ProjectOrders = () => {
   const { projectId } = useOutletContext<ProjectContext>();
 
+  // Creating an order is reserved to admins and the project's manager
+  // (backend mirrors with a 403); members are read-only here.
+  const { result: project } = useOne<{ managerUserId: string | null }>({
+    resource: "projects",
+    id: projectId,
+    queryOptions: { enabled: Boolean(projectId) },
+  });
+  const canEditProject = useCanEditProject();
+  const canManageOrders = canEditProject(project?.managerUserId);
+
   const { result } = useList<OrderRow>({
     resource: "orders",
     filters: [{ field: "projectId", operator: "eq", value: projectId }],
@@ -118,7 +129,7 @@ export const ProjectOrders = () => {
             <span className="text-sm font-normal text-muted-foreground">
               {rows.length} total
             </span>
-            <NewOrderDialog projectId={projectId} />
+            {canManageOrders && <NewOrderDialog projectId={projectId} />}
           </div>
         </CardTitle>
       </CardHeader>

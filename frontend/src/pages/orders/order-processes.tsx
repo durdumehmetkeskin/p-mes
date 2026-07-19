@@ -38,14 +38,13 @@ import { ProcessStepper } from "../projects/workspace/process-stepper";
 import type { StageData } from "../projects/workspace/stage-detail-dialog";
 import { formatHours, timingLine } from "../projects/workspace/time-format";
 import { useTeamMembers } from "../projects/workspace/use-team-members";
+import { useCanEditProject } from "@/hooks/use-can-edit-project";
 import { usePermissions } from "@/hooks/use-permissions";
 
 const NO_RESPONSIBLE = "__none__";
 
 interface ProcessRow {
   id: string;
-  category: { id: string; name: string } | null;
-  categoryId: string;
   overallStatus: string;
   usedTemplateId: string | null;
   startedAt: string | null;
@@ -62,18 +61,12 @@ interface ProcessRow {
 interface TemplateOpt {
   id: string;
   name: string;
-  category: { name: string } | null;
-}
-interface CategoryOpt {
-  id: string;
-  name: string;
 }
 
 interface TemplateStageRow {
   id: string;
   sequence: number;
   name: string | null;
-  stageType: { name: string } | null;
 }
 interface TemplateDetail {
   id: string;
@@ -102,18 +95,9 @@ function CreateProcessDialog({
     pagination: { mode: "off" },
     queryOptions: { enabled: Boolean(projectId) },
   });
-  const { result: catResult } = useList<CategoryOpt>({
-    resource: "stage-type-categories",
-    filters: projectFilter,
-    pagination: { mode: "off" },
-    queryOptions: { enabled: Boolean(projectId) },
-  });
-  const categories = catResult?.data ?? [];
-
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<"template" | "scratch">("template");
   const [templateId, setTemplateId] = useState("");
-  const [categoryId, setCategoryId] = useState("");
   const [requireEstimates, setRequireEstimates] = useState(false);
   const [procEst, setProcEst] = useState<Est>(emptyEst());
   const [stageEst, setStageEst] = useState<Record<number, Est>>({});
@@ -136,7 +120,6 @@ function CreateProcessDialog({
 
   const reset = () => {
     setTemplateId("");
-    setCategoryId("");
     setRequireEstimates(false);
     setProcEst(emptyEst());
     setStageEst({});
@@ -144,7 +127,7 @@ function CreateProcessDialog({
   };
 
   // Validation.
-  const baseOk = mode === "template" ? templateId !== "" : categoryId !== "";
+  const baseOk = mode === "template" ? templateId !== "" : true;
   let estimatesOk = true;
   if (requireEstimates) {
     if (mode === "template") {
@@ -162,7 +145,7 @@ function CreateProcessDialog({
     const values: Record<string, unknown> =
       mode === "template"
         ? { orderItemId, templateId }
-        : { orderItemId, categoryId };
+        : { orderItemId };
 
     if (requireEstimates) {
       values.requireEstimates = true;
@@ -282,7 +265,6 @@ function CreateProcessDialog({
                   {(templates?.data ?? []).map((t) => (
                     <SelectItem key={t.id} value={t.id}>
                       {t.name}
-                      {t.category ? ` (${t.category.name})` : ""}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -292,24 +274,9 @@ function CreateProcessDialog({
               </p>
             </div>
           ) : (
-            <div className="flex flex-col gap-2">
-              <Label>Category</Label>
-              <Select value={categoryId} onValueChange={setCategoryId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a category" />
-                </SelectTrigger>
-                <SelectContent>
-                  {categories.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                Starts empty — add same-category stage types one by one.
-              </p>
-            </div>
+            <p className="text-xs text-muted-foreground">
+              Starts empty — add stages one by one on the canvas.
+            </p>
           )}
 
           <div className="flex items-center gap-3 rounded-md border p-3">
@@ -347,7 +314,7 @@ function CreateProcessDialog({
                 templateStages.map((s, i) => (
                   <div key={s.id} className="space-y-1">
                     <span className="text-xs font-medium">
-                      {s.sequence}. {s.name ?? s.stageType?.name ?? "Stage"}
+                      {s.sequence}. {s.name ?? "Stage"}
                     </span>
                     {dateField(stageEst[i] ?? emptyEst(), (patch) =>
                       setStage(i, patch),
@@ -384,6 +351,15 @@ export function OrderProcesses({
   const members = useTeamMembers(projectId);
   const { has } = usePermissions();
   const canAssign = has("processes:update");
+  // Process files are managed only by an admin or the project's manager
+  // (backend mirrors with a 403); members read/download only.
+  const { result: project } = useOne<{ managerUserId: string | null }>({
+    resource: "projects",
+    id: projectId,
+    queryOptions: { enabled: Boolean(projectId) },
+  });
+  const canEditProject = useCanEditProject();
+  const canManageFiles = canEditProject(project?.managerUserId);
   const { result } = useList<ProcessRow>({
     resource: "processes",
     filters: [{ field: "orderItemId", operator: "eq", value: orderItemId }],
@@ -432,7 +408,6 @@ export function OrderProcesses({
             <div key={p.id} className="rounded-md border p-3">
               <div className="mb-1 flex items-center justify-between gap-2 text-sm">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline">{p.category?.name ?? "—"}</Badge>
                   <StatusBadge
                     label={String(p.overallStatus).replace(/_/g, " ")}
                   />
@@ -518,7 +493,12 @@ export function OrderProcesses({
                 </div>
               )}
               <div className="mt-4 border-t pt-3">
-                <AttachmentsPanel ownerType="process" ownerId={p.id} />
+                <AttachmentsPanel
+                  ownerType="process"
+                  ownerId={p.id}
+                  canUpload={canManageFiles && has("attachments:create")}
+                  canDelete={canManageFiles && has("attachments:delete")}
+                />
               </div>
             </div>
           ))

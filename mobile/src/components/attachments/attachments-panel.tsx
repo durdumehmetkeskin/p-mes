@@ -21,14 +21,21 @@ interface Attachment {
   size?: number;
 }
 
-type OwnerType = "project" | "process" | "stage";
+type OwnerType = "project" | "process" | "order_item" | "stage";
 
 export function AttachmentsPanel({
   ownerType,
   ownerId,
+  canUpload,
 }: {
   ownerType: OwnerType;
   ownerId: string;
+  /**
+   * Relationship-based override for the permission-key gate (e.g. stage
+   * documents are managed only by the stage's workers / process responsible /
+   * admin). Leave undefined to keep the default attachments:create gating.
+   */
+  canUpload?: boolean;
 }) {
   const router = useRouter();
   const [items, setItems] = useState<Attachment[]>([]);
@@ -123,25 +130,35 @@ export function AttachmentsPanel({
         <Text className="font-sans-semibold text-sm text-card-foreground">
           Attachments ({items.length})
         </Text>
-        <Can resource="attachments" action="create">
-          <ActionMenu
-            title={busy ? "Uploading…" : "Add attachment"}
-            options={[
-              { label: "Document", icon: FileText, onPress: pickDocument },
-              { label: "Photo", icon: Paperclip, onPress: pickImage },
-            ]}
-            trigger={(open) => (
-              <Pressable
-                onPress={open}
-                hitSlop={8}
-                disabled={busy}
-                className="h-8 w-8 items-center justify-center rounded-md active:bg-accent"
-              >
-                <Icon icon={Paperclip} size={18} color={colors.foreground} />
-              </Pressable>
-            )}
-          />
-        </Can>
+        {(() => {
+          const menu = (
+            <ActionMenu
+              title={busy ? "Uploading…" : "Add attachment"}
+              options={[
+                { label: "Document", icon: FileText, onPress: pickDocument },
+                { label: "Photo", icon: Paperclip, onPress: pickImage },
+              ]}
+              trigger={(open) => (
+                <Pressable
+                  onPress={open}
+                  hitSlop={8}
+                  disabled={busy}
+                  className="h-8 w-8 items-center justify-center rounded-md active:bg-accent"
+                >
+                  <Icon icon={Paperclip} size={18} color={colors.foreground} />
+                </Pressable>
+              )}
+            />
+          );
+          if (canUpload === undefined) {
+            return (
+              <Can resource="attachments" action="create">
+                {menu}
+              </Can>
+            );
+          }
+          return canUpload ? menu : null;
+        })()}
       </View>
 
       {items.length === 0 ? (

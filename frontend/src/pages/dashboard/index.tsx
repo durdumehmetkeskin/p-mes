@@ -15,7 +15,10 @@ import { Link } from "react-router";
 
 import { KpiCard } from "@/components/refine-ui/kpi-card";
 import { StatusBadge } from "@/components/refine-ui/status-badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useAccessState } from "@/hooks/use-access-state";
 import { cn } from "@/lib/utils";
+import { WorkerDashboard } from "./worker-dashboard";
 
 interface Identity {
   id: string;
@@ -61,7 +64,26 @@ const AUDIT_TONE: Record<AuditRow["action"], string> = {
   DELETE: "bg-destructive/10 text-destructive",
 };
 
+/**
+ * Admin/non-worker split: the classic telemetry dashboard reads resources a
+ * plain member cannot (materials/tools/stock/locations/audit → 403s), so
+ * members get their own self-scoped WorkerDashboard instead.
+ */
 export const Dashboard = () => {
+  const { ready, state } = useAccessState();
+  if (!ready) {
+    return (
+      <div className="flex flex-col gap-4">
+        <Skeleton className="h-8 w-64" />
+        <Skeleton className="h-28 w-full" />
+        <Skeleton className="h-64 w-full" />
+      </div>
+    );
+  }
+  return state?.isAdmin ? <AdminDashboard /> : <WorkerDashboard />;
+};
+
+const AdminDashboard = () => {
   const { data: identity } = useGetIdentity<Identity>();
 
   const materials = useTotal("materials");

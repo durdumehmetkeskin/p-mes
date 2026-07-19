@@ -13,13 +13,20 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
+import type { User } from '../users/entities/user.entity';
 import { CreateLocationDto } from './dto/create-location.dto';
 import { ListQueryDto } from './dto/list-query.dto';
+import { SectionScheduleQueryDto } from './dto/section-schedule-query.dto';
 import { UpdateLocationDto } from './dto/update-location.dto';
 import { Location } from './entities/location.entity';
 import { resolveListQuery } from '../../common/query/list-query.util';
 import { LocationsService, LocationStorageView } from './locations.service';
+import {
+  LocationSchedule,
+  SectionScheduleService,
+} from './section-schedule.service';
 
 const SORTABLE: ReadonlyArray<keyof Location> = [
   'code',
@@ -33,7 +40,10 @@ const SORTABLE: ReadonlyArray<keyof Location> = [
 @ApiBearerAuth('access-token')
 @Controller('locations')
 export class LocationsController {
-  constructor(private readonly service: LocationsService) {}
+  constructor(
+    private readonly service: LocationsService,
+    private readonly scheduleService: SectionScheduleService,
+  ) {}
 
   @RequirePermissions('locations:read')
   @Get()
@@ -67,6 +77,27 @@ export class LocationsController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<LocationStorageView> {
     return this.service.getStorage(id);
+  }
+
+  // Location-wide calendar feed: every section's reservations + the reserved
+  // orders' stage schedules. Members only see their member projects' rows
+  // (scoping happens in the service), so plain locations:read suffices.
+  @RequirePermissions('locations:read')
+  @Get(':id/schedule')
+  @ApiOperation({
+    summary:
+      "Location calendar feed: all sections' reservations + reserved orders' stages",
+  })
+  schedule(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: SectionScheduleQueryDto,
+    @CurrentUser() user: User,
+  ): Promise<LocationSchedule> {
+    return this.scheduleService.scheduleForLocation(id, {
+      from: query.from,
+      to: query.to,
+      user,
+    });
   }
 
   @RequirePermissions('locations:create')

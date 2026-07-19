@@ -22,7 +22,6 @@ interface Stage extends BaseRecord {
 }
 interface Process extends BaseRecord {
   id: string;
-  category?: { name?: string };
   stages?: Stage[];
 }
 

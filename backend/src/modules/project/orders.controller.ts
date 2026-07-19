@@ -77,9 +77,11 @@ export class OrdersController {
     return this.service.orderPoolStockItems(id, user);
   }
 
-  @RequirePermissions('orders:create')
+  // No @RequirePermissions: authorization is decided in the service — only an
+  // admin or the project's manager may create an order (the manager may lack
+  // the orders:create key, so a guard-level check would lock them out).
   @Post()
-  @ApiOperation({ summary: 'Create an order' })
+  @ApiOperation({ summary: 'Create an order (admin or project manager only)' })
   create(
     @Body() dto: CreateOrderDto,
     @CurrentUser() user: User,
@@ -87,11 +89,12 @@ export class OrdersController {
     return this.service.create(dto, user);
   }
 
-  @RequirePermissions('orders:delete')
+  // No @RequirePermissions: service-enforced — admin or project manager only.
   @Delete(':id')
   @HttpCode(204)
   @ApiOperation({
-    summary: 'Delete an order (soft-delete; blocked if it has any process)',
+    summary:
+      'Delete an order (admin or project manager only; blocked if it has any process)',
   })
   remove(
     @Param('id', ParseUUIDPipe) id: string,

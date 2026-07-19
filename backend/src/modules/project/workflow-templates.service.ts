@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -8,7 +9,6 @@ import {
   DataSource,
   EntityManager,
   FindOptionsWhere,
-  In,
   IsNull,
   Repository,
 } from 'typeorm';
@@ -17,7 +17,8 @@ import { CreateWorkflowTemplateDto } from './dto/create-workflow-template.dto';
 import { UpdateWorkflowTemplateDto } from './dto/update-workflow-template.dto';
 import { WorkflowTemplateLinkInputDto } from './dto/workflow-template-link-input.dto';
 import { WorkflowTemplateStageInputDto } from './dto/workflow-template-stage-input.dto';
-import { StageType } from './entities/stage-type.entity';
+import { User } from '../users/entities/user.entity';
+import { ProjectsService } from './projects.service';
 import { WorkflowTemplateStage } from './entities/workflow-template-stage.entity';
 import { WorkflowTemplateStageLink } from './entities/workflow-template-stage-link.entity';
 import { WorkflowTemplate } from './entities/workflow-template.entity';
@@ -28,20 +29,49 @@ export class WorkflowTemplatesService {
     private readonly dataSource: DataSource,
     @InjectRepository(WorkflowTemplate)
     private readonly repo: Repository<WorkflowTemplate>,
-    @InjectRepository(StageType)
-    private readonly stageTypes: Repository<StageType>,
+    private readonly projects: ProjectsService,
   ) {}
 
-  findPaginated(options: {
-    skip?: number;
-    take?: number;
-    sort: keyof WorkflowTemplate;
-    order: 'ASC' | 'DESC';
-    categoryId?: string;
-    projectId?: string;
-  }): Promise<[WorkflowTemplate[], number]> {
+  /**
+   * The workspace Workflows page (read AND write) is reserved to admins and
+   * the project's manager. Global templates (projectId null) are admin-only.
+   * Non-member outsiders get 404; members get an explicit 403.
+   */
+  private async assertWorkflowManager(
+    projectId: string | null | undefined,
+    user?: User,
+  ): Promise<void> {
+    if (!user || ProjectsService.isAdmin(user)) return;
+    if (!projectId) {
+      throw new ForbiddenException(
+        'Genel (proje-dışı) iş akışı şablonlarını yalnızca admin yönetebilir.',
+      );
+    }
+    if (!(await this.projects.isMember(projectId, user.id))) {
+      throw new NotFoundException('Workflow template not found');
+    }
+    const project = await this.projects.findOne(projectId);
+    if (project.managerUserId !== user.id) {
+      throw new ForbiddenException(
+        'İş akışlarını yalnızca proje yöneticisi veya admin görüntüleyebilir ve yönetebilir.',
+      );
+    }
+  }
+
+  async findPaginated(
+    options: {
+      skip?: number;
+      take?: number;
+      sort: keyof WorkflowTemplate;
+      order: 'ASC' | 'DESC';
+      projectId?: string;
+    },
+    user?: User,
+  ): Promise<[WorkflowTemplate[], number]> {
+    // Non-admins may only list within a project they manage (the workspace
+    // always sends projectId); the unfiltered global list is admin-only.
+    await this.assertWorkflowManager(options.projectId ?? null, user);
     const base: FindOptionsWhere<WorkflowTemplate> = {};
-    if (options.categoryId) base.categoryId = options.categoryId;
     // Global templates (project_id IS NULL) plus the given project's own.
     const where: FindOptionsWhere<WorkflowTemplate>[] = options.projectId
       ? [
@@ -58,25 +88,28 @@ export class WorkflowTemplatesService {
     });
   }
 
-  /** Template with its ordered stages (and each stage's catalog type). */
-  async findOneWithStages(id: string): Promise<WorkflowTemplate> {
+  /** Template with its ordered stages. */
+  async findOneWithStages(id: string, user?: User): Promise<WorkflowTemplate> {
     const found = await this.repo.findOne({
       where: { id },
-      relations: { stages: { stageType: true } },
+      relations: { stages: true },
       order: { stages: { sequence: 'ASC' } },
     });
     if (!found)
       throw new NotFoundException(`Workflow template ${id} not found`);
+    if (user) await this.assertWorkflowManager(found.projectId, user);
     return found;
   }
 
-  async create(dto: CreateWorkflowTemplateDto): Promise<WorkflowTemplate> {
-    await this.assertStagesMatchCategory(dto.categoryId, dto.stages ?? []);
+  async create(
+    dto: CreateWorkflowTemplateDto,
+    user?: User,
+  ): Promise<WorkflowTemplate> {
+    await this.assertWorkflowManager(dto.projectId ?? null, user);
     const id = await this.dataSource.transaction(async (manager) => {
       const template = manager.create(WorkflowTemplate, {
         name: dto.name,
         description: dto.description ?? null,
-        categoryId: dto.categoryId,
         projectId: dto.projectId ?? null,
         isSystemDefault: false,
         isActive: true,
@@ -91,15 +124,13 @@ export class WorkflowTemplatesService {
   async update(
     id: string,
     dto: UpdateWorkflowTemplateDto,
+    user?: User,
   ): Promise<WorkflowTemplate> {
     const existing = await this.repo.findOne({ where: { id } });
     if (!existing) {
       throw new NotFoundException(`Workflow template ${id} not found`);
     }
-    const effectiveCategory = dto.categoryId ?? existing.categoryId;
-    if (dto.stages !== undefined) {
-      await this.assertStagesMatchCategory(effectiveCategory, dto.stages);
-    }
+    await this.assertWorkflowManager(existing.projectId, user);
     // Links are index-based against the (replaced) stage list — meaningless
     // without it.
     if (dto.links !== undefined && dto.stages === undefined) {
@@ -111,7 +142,6 @@ export class WorkflowTemplatesService {
     await this.dataSource.transaction(async (manager) => {
       if (dto.name !== undefined) existing.name = dto.name;
       if (dto.description !== undefined) existing.description = dto.description;
-      if (dto.categoryId !== undefined) existing.categoryId = dto.categoryId;
       await manager.save(existing);
 
       // Replace the full stage list when provided (links go with it via FK
@@ -124,18 +154,23 @@ export class WorkflowTemplatesService {
     return this.findOneWithStages(id);
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(id: string, user?: User): Promise<void> {
     const found = await this.repo.findOne({
       where: { id },
       relations: { stages: true },
     });
     if (!found)
       throw new NotFoundException(`Workflow template ${id} not found`);
+    await this.assertWorkflowManager(found.projectId, user);
     await this.repo.softRemove(found);
   }
 
   /** Copy a template (and its stages) into a new, user-owned template. */
-  async duplicate(id: string, projectId?: string): Promise<WorkflowTemplate> {
+  async duplicate(
+    id: string,
+    projectId?: string,
+    user?: User,
+  ): Promise<WorkflowTemplate> {
     const source = await this.repo.findOne({
       where: { id },
       relations: { stages: true },
@@ -143,12 +178,14 @@ export class WorkflowTemplatesService {
     });
     if (!source)
       throw new NotFoundException(`Workflow template ${id} not found`);
+    // The COPY lands in `projectId ?? source.projectId` — authorize there
+    // (a manager may duplicate a global template INTO their own project).
+    await this.assertWorkflowManager(projectId ?? source.projectId, user);
 
     const newId = await this.dataSource.transaction(async (manager) => {
       const copy = manager.create(WorkflowTemplate, {
         name: `${source.name} (Copy)`,
         description: source.description,
-        categoryId: source.categoryId,
         // The copy belongs to the current project (falls back to the source).
         projectId: projectId ?? source.projectId,
         isSystemDefault: false,
@@ -173,8 +210,7 @@ export class WorkflowTemplatesService {
         manager,
         saved.id,
         ordered.map((s) => ({
-          stageTypeId: s.stageTypeId,
-          name: s.name ?? undefined,
+          name: s.name ?? 'Stage',
           input: s.input ?? undefined,
           output: s.output ?? undefined,
           posX: s.posX ?? undefined,
@@ -185,28 +221,6 @@ export class WorkflowTemplatesService {
       return saved.id;
     });
     return this.findOneWithStages(newId);
-  }
-
-  /**
-   * Enforce that every referenced stage type belongs to the template category —
-   * a planning template may only contain planning stage types, etc.
-   */
-  private async assertStagesMatchCategory(
-    categoryId: string,
-    stages: WorkflowTemplateStageInputDto[],
-  ): Promise<void> {
-    if (stages.length === 0) return;
-    const ids = [...new Set(stages.map((s) => s.stageTypeId))];
-    const types = await this.stageTypes.find({ where: { id: In(ids) } });
-    const byId = new Map(types.map((t) => [t.id, t]));
-    const offending = ids.filter(
-      (id) => byId.get(id)?.categoryId !== categoryId,
-    );
-    if (offending.length > 0) {
-      throw new BadRequestException(
-        'All stages must belong to the template category.',
-      );
-    }
   }
 
   /**
@@ -244,7 +258,6 @@ export class WorkflowTemplatesService {
       const saved = await manager.save(
         manager.create(WorkflowTemplateStage, {
           templateId,
-          stageTypeId: s.stageTypeId,
           sequence: sequenceOf.get(String(i))!,
           name: s.name ?? null,
           input: s.input ?? null,

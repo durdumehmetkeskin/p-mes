@@ -7,7 +7,6 @@ import {
   OneToMany,
 } from 'typeorm';
 import { BaseEntity } from '../../../common/entities/base.entity';
-import { StageType } from './stage-type.entity';
 import { WorkflowTemplateStageLink } from './workflow-template-stage-link.entity';
 import { WorkflowTemplate } from './workflow-template.entity';
 
@@ -25,23 +24,10 @@ export class WorkflowTemplateStage extends BaseEntity {
   @Column({ type: 'uuid', name: 'template_id' })
   templateId: string;
 
-  // Referenced catalog type. RESTRICT prevents removing a type still in use.
-  @ManyToOne(() => StageType, {
-    eager: true,
-    nullable: false,
-    onDelete: 'RESTRICT',
-  })
-  @JoinColumn({ name: 'stage_type_id' })
-  stageType: StageType;
-
-  @Index()
-  @Column({ type: 'uuid', name: 'stage_type_id' })
-  stageTypeId: string;
-
   @Column({ type: 'int' })
   sequence: number;
 
-  // Optional overrides of the stage type's name / default input / output.
+  // Stage display name (types were removed; the name IS the stage identity).
   @Column({ type: 'varchar', length: 255, nullable: true })
   name: string | null;
 

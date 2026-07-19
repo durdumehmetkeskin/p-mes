@@ -2,11 +2,11 @@ import { useDelete, useList, useOne } from "@refinedev/core";
 import { Trash2 } from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router";
 
-import { Can } from "@/components/can";
 import { StatusBadge } from "@/components/refine-ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useCanEditProject } from "@/hooks/use-can-edit-project";
 import { OrderItems } from "../../orders/order-items";
 import { ConfirmDelete } from "./confirm-delete";
 import { OrderRequiredMaterials } from "./order-required-materials";
@@ -39,6 +39,16 @@ export const ProjectOrderDetail = () => {
   });
   const order = result;
 
+  // Deleting an order is reserved to admins and the project's manager
+  // (backend mirrors with a 403).
+  const { result: project } = useOne<{ managerUserId: string | null }>({
+    resource: "projects",
+    id: id ?? "",
+    queryOptions: { enabled: Boolean(id) },
+  });
+  const canEditProject = useCanEditProject();
+  const canManageOrders = canEditProject(project?.managerUserId);
+
   // Leaf-first: an order can only be deleted once it has no processes.
   const { result: processList } = useList({
     resource: "processes",
@@ -69,24 +79,22 @@ export const ProjectOrderDetail = () => {
         )}
         {order && (
           <div className="ml-auto flex items-center gap-2">
-            {!hasProcesses && (
-              <Can perm="orders:delete">
-                <ConfirmDelete
-                  title="Delete order?"
-                  description="This order and its line items will be removed. Reserved materials will return to available stock."
-                  onConfirm={onDeleteOrder}
-                  trigger={
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="text-destructive"
-                      aria-label="Delete order"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  }
-                />
-              </Can>
+            {!hasProcesses && canManageOrders && (
+              <ConfirmDelete
+                title="Delete order?"
+                description="This order and its line items will be removed. Reserved materials will return to available stock."
+                onConfirm={onDeleteOrder}
+                trigger={
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="text-destructive"
+                    aria-label="Delete order"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                }
+              />
             )}
           </div>
         )}
@@ -124,7 +132,9 @@ export const ProjectOrderDetail = () => {
         />
       )}
 
-      {order && <OrderRequiredMaterials orderId={order.id} />}
+      {order && (
+        <OrderRequiredMaterials orderId={order.id} canManage={canManageOrders} />
+      )}
     </div>
   );
 };

@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DataPanel } from "./data-panel";
-import { ReservationsPanel } from "./reservations-panel";
 import { SectionsPanel } from "./sections-panel";
 import { StoragePanel } from "./storage-panel";
 
@@ -61,7 +60,6 @@ export const LocationsShow = () => {
         <>
           <SectionsPanel locationId={id} />
           <StoragePanel locationId={id} />
-          <ReservationsPanel locationId={id} />
           <DataPanel locationId={id} />
         </>
       )}

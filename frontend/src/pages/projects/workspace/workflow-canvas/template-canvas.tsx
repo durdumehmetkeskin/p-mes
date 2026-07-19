@@ -29,7 +29,6 @@ import {
 import { useCallback, useEffect, useState, type DragEvent } from "react";
 import { toast } from "sonner";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -37,9 +36,6 @@ import { layoutDag, wouldCreateCycle } from "./dag-layout";
 
 export interface CanvasStage {
   key: string;
-  stageTypeId: string;
-  categoryId: string;
-  code: string;
   name: string;
   input: string;
   output: string;
@@ -69,32 +65,24 @@ export function kindFromHandles(
 
 export const IO_EDGE_COLOR = "rgb(45 212 191)"; // teal-400
 
-export interface StageTypeOption {
-  id: string;
-  code: string;
-  name: string;
-}
-
 interface Props {
   stages: CanvasStage[];
   links: CanvasLink[];
-  typeOptions: StageTypeOption[];
-  onAddStage: (stageTypeId: string, pos: { x: number; y: number }) => void;
+  onAddStage: (pos: { x: number; y: number }) => void;
   onPatchStage: (key: string, patch: Partial<CanvasStage>) => void;
   onRemoveStage: (key: string) => void;
   onAddLink: (link: CanvasLink) => void;
   onRemoveLink: (link: CanvasLink) => void;
 }
 
-const DND_MIME = "application/x-pmes-stage-type";
+const DND_MIME = "application/x-pmes-stage";
 
-/** Node icon — every stage type is generic now, so one shared identity. */
+/** Node icon — stages are all one kind, so one shared identity. */
 export function StageIcon({ className = "h-4 w-4" }: { className?: string }) {
   return <Box className={className} />;
 }
 
 type StageNodeType = Node<{
-  code: string;
   label: string;
   input: string;
   output: string;
@@ -128,9 +116,6 @@ function StageNode({ data, selected }: NodeProps<StageNodeType>) {
         </span>
         <div className="min-w-0">
           <div className="truncate text-sm font-medium">{data.label}</div>
-          <div className="truncate text-[10px] text-muted-foreground">
-            {data.code}
-          </div>
         </div>
         <Handle
           id="seq-in"
@@ -181,7 +166,6 @@ const edgeId = (l: CanvasLink) => `${l.kind}:${l.fromKey}->${l.toKey}`;
 function CanvasInner({
   stages,
   links,
-  typeOptions,
   onAddStage,
   onPatchStage,
   onRemoveStage,
@@ -241,8 +225,7 @@ function CanvasInner({
         ? { x: s.posX, y: s.posY }
         : (autoPositions?.get(s.key) ?? { x: 80, y: 80 }),
     data: {
-      code: s.code,
-      label: s.name || s.code,
+      label: s.name || "Stage",
       input: s.input,
       output: s.output,
       onRemove: () => {
@@ -332,13 +315,12 @@ function CanvasInner({
   const onDrop = useCallback(
     (event: DragEvent) => {
       event.preventDefault();
-      const stageTypeId = event.dataTransfer.getData(DND_MIME);
-      if (!stageTypeId) return;
+      if (!event.dataTransfer.getData(DND_MIME)) return;
       const pos = screenToFlowPosition({
         x: event.clientX,
         y: event.clientY,
       });
-      onAddStage(stageTypeId, pos);
+      onAddStage(pos);
     },
     [screenToFlowPosition, onAddStage],
   );
@@ -351,49 +333,39 @@ function CanvasInner({
           : "flex h-full min-h-[480px] overflow-hidden rounded-md border"
       }
     >
-      {/* Palette — drag a stage type onto the canvas (or click to add). */}
+      {/* Palette — drag the stage block onto the canvas (or click to add). */}
       <div className="flex w-60 shrink-0 flex-col border-r bg-card/50">
-        <div className="border-b px-3 py-2 text-sm font-medium">
-          Stage library
-        </div>
+        <div className="border-b px-3 py-2 text-sm font-medium">Stages</div>
         <div className="flex-1 space-y-1.5 overflow-y-auto p-2">
-          {typeOptions.length === 0 && (
-            <p className="p-2 text-xs text-muted-foreground">
-              No stage types in this category.
-            </p>
-          )}
-          {typeOptions.map((t) => (
-            <div
-              key={t.id}
-              draggable
-              onDragStart={(e) => {
-                e.dataTransfer.setData(DND_MIME, t.id);
-                e.dataTransfer.effectAllowed = "move";
-              }}
-              onClick={() =>
-                onAddStage(t.id, {
-                  x: 120 + (stages.length % 3) * 260,
-                  y: 100 + Math.floor(stages.length / 3) * 140,
-                })
-              }
-              className="flex cursor-grab items-center gap-2 rounded-md border bg-card px-2 py-1.5 text-sm hover:border-primary/50 active:cursor-grabbing"
-              title="Drag onto the canvas (or click to add)"
-            >
-              <GripVertical className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-primary/15 text-primary">
-                <StageIcon className="h-3.5 w-3.5" />
-              </span>
-              <div className="min-w-0">
-                <div className="truncate text-xs font-medium">{t.name}</div>
-                <div className="truncate text-[10px] text-muted-foreground">
-                  {t.code}
-                </div>
+          <div
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData(DND_MIME, "stage");
+              e.dataTransfer.effectAllowed = "move";
+            }}
+            onClick={() =>
+              onAddStage({
+                x: 120 + (stages.length % 3) * 260,
+                y: 100 + Math.floor(stages.length / 3) * 140,
+              })
+            }
+            className="flex cursor-grab items-center gap-2 rounded-md border bg-card px-2 py-1.5 text-sm hover:border-primary/50 active:cursor-grabbing"
+            title="Drag onto the canvas (or click to add)"
+          >
+            <GripVertical className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-primary/15 text-primary">
+              <StageIcon className="h-3.5 w-3.5" />
+            </span>
+            <div className="min-w-0">
+              <div className="truncate text-xs font-medium">New stage</div>
+              <div className="truncate text-[10px] text-muted-foreground">
+                Name it in the right panel
               </div>
             </div>
-          ))}
+          </div>
         </div>
         <div className="border-t p-2 text-[10px] leading-relaxed text-muted-foreground">
-          Drag types onto the canvas. Connect handles to define "must complete
+          Drag stages onto the canvas. Connect handles to define "must complete
           before". Select a node/edge and press Delete to remove it.
         </div>
       </div>
@@ -471,7 +443,7 @@ function CanvasInner({
                 <StageIcon />
               </span>
               <span className="truncate text-sm font-medium">
-                {selected.name || selected.code}
+                {selected.name || "Stage"}
               </span>
             </div>
             <Button
@@ -484,11 +456,8 @@ function CanvasInner({
             </Button>
           </div>
           <div className="flex-1 space-y-4 overflow-y-auto p-3">
-            <div className="flex flex-wrap gap-1">
-              <Badge variant="outline">{selected.code}</Badge>
-            </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="node-name">Stage name (override)</Label>
+              <Label htmlFor="node-name">Stage name</Label>
               <Input
                 id="node-name"
                 value={selected.name}

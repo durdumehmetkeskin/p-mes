@@ -1,7 +1,6 @@
 import {
   useCreate,
   useInvalidate,
-  useList,
   useOne,
   useUpdate,
 } from "@refinedev/core";
@@ -18,13 +17,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import type {
   CanvasLink,
@@ -35,19 +27,8 @@ import type {
 // doesn't grow (the app is otherwise a single chunk).
 const TemplateCanvas = lazy(() => import("./workflow-canvas/template-canvas"));
 
-interface StageTypeOpt {
-  id: string;
-  code: string;
-  name: string;
-  categoryId: string;
-}
-interface CategoryOpt {
-  id: string;
-  name: string;
-}
 interface TemplateStage {
   id: string;
-  stageTypeId: string;
   sequence: number;
   name: string | null;
   input: string | null;
@@ -55,20 +36,18 @@ interface TemplateStage {
   posX: number | null;
   posY: number | null;
   incomingLinks?: Array<{ fromStageId: string; kind?: "sequence" | "io" }>;
-  stageType: { code: string; name: string } | null;
 }
 interface TemplateRecord {
   id: string;
   name: string;
   description: string | null;
-  categoryId: string;
   isSystemDefault: boolean;
   stages: TemplateStage[];
 }
 
 /**
- * Dify-style workflow template editor: a compact top bar (name, category,
- * description, save) over a full-height drag & drop node canvas. All stage
+ * Dify-style workflow template editor: a compact top bar (name, description,
+ * save) over a full-height drag & drop node canvas. All stage
  * editing happens on the canvas.
  */
 export const TemplateBuilder = () => {
@@ -86,28 +65,8 @@ export const TemplateBuilder = () => {
     queryOptions: { enabled: isEdit },
   });
 
-  const projectFilter = [
-    { field: "projectId", operator: "eq" as const, value: id },
-  ];
-  const { result: library } = useList<StageTypeOpt>({
-    resource: "stage-types",
-    filters: projectFilter,
-    pagination: { mode: "off" },
-    queryOptions: { enabled: Boolean(id) },
-  });
-  const stageTypes = library?.data ?? [];
-
-  const { result: catResult } = useList<CategoryOpt>({
-    resource: "stage-type-categories",
-    filters: projectFilter,
-    pagination: { mode: "off" },
-    queryOptions: { enabled: Boolean(id) },
-  });
-  const categories = catResult?.data ?? [];
-
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [categoryId, setCategoryId] = useState("");
   const [stages, setStages] = useState<CanvasStage[]>([]);
   const [links, setLinks] = useState<CanvasLink[]>([]);
   const [saving, setSaving] = useState(false);
@@ -121,7 +80,6 @@ export const TemplateBuilder = () => {
       initialized.current = true;
       setName(template.name);
       setDescription(template.description ?? "");
-      setCategoryId(template.categoryId);
       const ordered = [...(template.stages ?? [])].sort(
         (a, b) => a.sequence - b.sequence,
       );
@@ -131,10 +89,6 @@ export const TemplateBuilder = () => {
         keyByStageId.set(s.id, key);
         return {
           key,
-          stageTypeId: s.stageTypeId,
-          // All stages share the template category (enforced).
-          categoryId: template.categoryId,
-          code: s.stageType?.code ?? "?",
           name: s.name ?? "",
           input: s.input ?? "",
           output: s.output ?? "",
@@ -157,35 +111,12 @@ export const TemplateBuilder = () => {
     }
   }, [isEdit, template]);
 
-  // Only stage types of the chosen category can be added.
-  const filteredTypes = stageTypes.filter((s) => s.categoryId === categoryId);
-
-  const onCategoryChange = (value: string) => {
-    setCategoryId(value);
-    // Drop stages that no longer match the category (and their links).
-    setStages((prev) => {
-      const kept = prev.filter((s) => s.categoryId === value);
-      const keptKeys = new Set(kept.map((s) => s.key));
-      setLinks((prevLinks) =>
-        prevLinks.filter(
-          (l) => keptKeys.has(l.fromKey) && keptKeys.has(l.toKey),
-        ),
-      );
-      return kept;
-    });
-  };
-
-  const addStage = (stageTypeId: string, pos: { x: number; y: number }) => {
-    const st = stageTypes.find((s) => s.id === stageTypeId);
-    if (!st) return;
+  const addStage = (pos: { x: number; y: number }) => {
     setStages((prev) => [
       ...prev,
       {
         key: nextKey(),
-        stageTypeId: st.id,
-        categoryId: st.categoryId,
-        code: st.code,
-        name: st.name,
+        name: `Stage ${prev.length + 1}`,
         input: "",
         output: "",
         posX: pos.x,
@@ -221,16 +152,14 @@ export const TemplateBuilder = () => {
     );
 
   const save = () => {
-    if (!name.trim() || !categoryId) return;
+    if (!name.trim()) return;
     setSaving(true);
     const indexOf = new Map(stages.map((s, i) => [s.key, i]));
     const values = {
       name: name.trim(),
       description: description || undefined,
-      categoryId,
-      stages: stages.map((s) => ({
-        stageTypeId: s.stageTypeId,
-        name: s.name || undefined,
+      stages: stages.map((s, i) => ({
+        name: s.name.trim() || `Stage ${i + 1}`,
         input: s.input || undefined,
         output: s.output || undefined,
         posX: s.posX ?? undefined,
@@ -278,18 +207,6 @@ export const TemplateBuilder = () => {
         {template?.isSystemDefault && (
           <Badge variant="secondary">system default</Badge>
         )}
-        <Select value={categoryId} onValueChange={onCategoryChange}>
-          <SelectTrigger className="h-8 w-52">
-            <SelectValue placeholder="Select a category" />
-          </SelectTrigger>
-          <SelectContent>
-            {categories.map((c) => (
-              <SelectItem key={c.id} value={c.id}>
-                {c.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
         <Popover>
           <PopoverTrigger asChild>
             <Button size="sm" variant="outline" title="Template settings">
@@ -314,7 +231,7 @@ export const TemplateBuilder = () => {
         <Button
           size="sm"
           onClick={save}
-          disabled={saving || !name.trim() || !categoryId}
+          disabled={saving || !name.trim()}
         >
           {saving ? "Saving..." : "Save template"}
         </Button>
@@ -322,27 +239,19 @@ export const TemplateBuilder = () => {
 
       {/* Full-height Dify-style canvas (palette | canvas | config panel). */}
       <div className="min-h-0 flex-1">
-        {categoryId ? (
-          <Suspense
-            fallback={<div className="h-full animate-pulse rounded-md border" />}
-          >
-            <TemplateCanvas
-              stages={stages}
-              links={links}
-              typeOptions={filteredTypes}
-              onAddStage={addStage}
-              onPatchStage={patchStage}
-              onRemoveStage={removeStage}
-              onAddLink={addLink}
-              onRemoveLink={removeLink}
-            />
-          </Suspense>
-        ) : (
-          <div className="flex h-full items-center justify-center rounded-md border text-sm text-muted-foreground">
-            Select a category to start building — its stage types will appear
-            in the library.
-          </div>
-        )}
+        <Suspense
+          fallback={<div className="h-full animate-pulse rounded-md border" />}
+        >
+          <TemplateCanvas
+            stages={stages}
+            links={links}
+            onAddStage={addStage}
+            onPatchStage={patchStage}
+            onRemoveStage={removeStage}
+            onAddLink={addLink}
+            onRemoveLink={removeLink}
+          />
+        </Suspense>
       </div>
     </div>
   );

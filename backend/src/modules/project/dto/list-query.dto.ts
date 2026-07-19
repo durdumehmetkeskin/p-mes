@@ -41,10 +41,6 @@ export class ListQueryDto {
 
   @IsOptional()
   @IsUUID()
-  categoryId?: string;
-
-  @IsOptional()
-  @IsUUID()
   customerCompanyId?: string;
 
   @IsOptional()

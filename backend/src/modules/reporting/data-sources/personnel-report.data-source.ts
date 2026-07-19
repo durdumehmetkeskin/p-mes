@@ -106,7 +106,6 @@ export class PersonnelReportDataSource implements ReportDataSourceProvider {
             relations: {
               process: {
                 orderItem: { order: { project: true } },
-                category: true,
               },
             },
             order: { startedAt: 'ASC' },
@@ -170,7 +169,7 @@ export class PersonnelReportDataSource implements ReportDataSourceProvider {
         status: s.status,
         orderNumber: order?.orderNumber ?? null,
         projectName: order?.project?.name ?? null,
-        processCategory: s.process?.category?.name ?? null,
+        processCategory: null,
         start,
         end,
         startedAt,

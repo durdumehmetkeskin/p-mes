@@ -89,27 +89,37 @@ export class OrderMaterialRequirementsController {
     return row;
   }
 
-  @RequirePermissions('projects:update')
+  // No @RequirePermissions on create/update/delete: only an admin or the
+  // project's manager may edit the requirements list — service-decided (the
+  // manager may lack the projects:update key, so a guard check would lock
+  // them out). Membership scoping (404) comes from orders.findOne.
   @Post()
-  @ApiOperation({ summary: 'Add a material to an order requirements list' })
+  @ApiOperation({
+    summary:
+      'Add a material to an order requirements list (admin or project manager)',
+  })
   async create(
     @Body() dto: CreateOrderMaterialRequirementDto,
     @CurrentUser() user: User,
   ): Promise<OrderMaterialRequirement> {
-    await this.orders.findOne(dto.orderId, user);
+    const order = await this.orders.findOne(dto.orderId, user);
+    await this.orders.assertOrderEditor(order.projectId, user);
     return this.service.create(dto);
   }
 
-  @RequirePermissions('projects:update')
   @Patch(':id')
-  @ApiOperation({ summary: "Update a requirement's quantity / note" })
+  @ApiOperation({
+    summary:
+      "Update a requirement's quantity / note (admin or project manager)",
+  })
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateOrderMaterialRequirementDto,
     @CurrentUser() user: User,
   ): Promise<OrderMaterialRequirement> {
     const row = await this.service.findOne(id);
-    await this.orders.findOne(row.orderId, user);
+    const order = await this.orders.findOne(row.orderId, user);
+    await this.orders.assertOrderEditor(order.projectId, user);
     return this.service.update(id, dto);
   }
 
@@ -128,16 +138,19 @@ export class OrderMaterialRequirementsController {
     return this.service.reserveStock(row, order, dto.quantity, user?.id);
   }
 
-  @RequirePermissions('projects:update')
   @Delete(':id')
   @HttpCode(204)
-  @ApiOperation({ summary: 'Remove a material from the requirements list' })
+  @ApiOperation({
+    summary:
+      'Remove a material from the requirements list (admin or project manager)',
+  })
   async remove(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: User,
   ): Promise<void> {
     const row = await this.service.findOne(id);
-    await this.orders.findOne(row.orderId, user);
+    const order = await this.orders.findOne(row.orderId, user);
+    await this.orders.assertOrderEditor(order.projectId, user);
     await this.service.remove(id, user?.id);
   }
 }

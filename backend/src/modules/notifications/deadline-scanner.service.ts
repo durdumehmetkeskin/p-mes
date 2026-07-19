@@ -103,7 +103,7 @@ export class DeadlineScannerService {
         p.estimatedCompletedDate,
         'process',
         p.id,
-        `Süreç${p.category?.name ? ` (${p.category.name})` : ''}`,
+        'Süreç',
         link,
       );
     }

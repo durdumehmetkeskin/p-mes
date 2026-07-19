@@ -25,7 +25,7 @@ interface StageCard {
   projectName: string | null;
   orderId: string | null;
   orderNumber: string | null;
-  categoryName: string | null;
+  processName: string | null;
   estimatedStartDate: string | null;
   estimatedCompletedDate: string | null;
 }
@@ -242,8 +242,8 @@ export const BoardView = () => {
                   <span className="text-sm font-medium">
                     {c.sequence}. {c.name}
                   </span>
-                  {c.categoryName && (
-                    <Badge variant="outline">{c.categoryName}</Badge>
+                  {c.processName && (
+                    <Badge variant="outline">{c.processName}</Badge>
                   )}
                 </div>
                 <div className="text-xs text-muted-foreground">

@@ -111,7 +111,6 @@ export class OrderReportDataSource implements ReportDataSourceProvider {
         return {
           sequence: s.sequence,
           name: s.name,
-          stageType: s.stageType?.name ?? null,
           status: s.status,
           responsible:
             (s.workers ?? []).map((w) => w.name).join(', ') || null,
@@ -127,12 +126,11 @@ export class OrderReportDataSource implements ReportDataSourceProvider {
       });
       if (pTotal > 0) {
         processCompletion.push({
-          label: p.category?.name ?? `Süreç ${idx + 1}`,
+          label: `Süreç ${idx + 1}`,
           value: (pCompleted / pTotal) * 100,
         });
       }
       return {
-        category: p.category?.name ?? null,
         status: p.overallStatus,
         responsible: p.responsibleUser?.name ?? null,
         totalStages: pTotal,

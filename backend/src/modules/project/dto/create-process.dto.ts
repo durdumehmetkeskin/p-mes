@@ -12,9 +12,9 @@ import {
 import { ProcessStageEstimateInputDto } from './process-stage-estimate-input.dto';
 
 /**
- * Create a runtime process for an order item. When `templateId` is given, stages are
- * copied (independently) from that template and `categoryId` is taken from it.
- * Without a template, an empty process is created and `categoryId` is required.
+ * Create a runtime process for an order item. When `templateId` is given,
+ * stages are copied (independently) from that template; without one an empty
+ * process is created.
  *
  * When `requireEstimates` is true, the process estimated dates/duration are
  * mandatory, and (for a template) `stageEstimates` must supply one entry per
@@ -27,10 +27,6 @@ export class CreateProcessDto {
   @IsOptional()
   @IsUUID()
   templateId?: string;
-
-  @IsOptional()
-  @IsUUID()
-  categoryId?: string;
 
   @IsOptional()
   @IsBoolean()

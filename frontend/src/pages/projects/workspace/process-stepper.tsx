@@ -2,7 +2,6 @@ import {
   useApiUrl,
   useCustomMutation,
   useGetIdentity,
-  useList,
 } from "@refinedev/core";
 import { Plus } from "lucide-react";
 import { lazy, Suspense, useState } from "react";
@@ -16,25 +15,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { StageDetailDialog, type StageData } from "./stage-detail-dialog";
 
 // The embedded DAG canvas — pulls in @xyflow/react + dagre, so lazy-loaded.
 const ProcessCanvas = lazy(() => import("./workflow-canvas/process-canvas"));
-
-interface StageTypeOpt {
-  id: string;
-  code: string;
-  name: string;
-  categoryId: string;
-}
 
 /**
  * A process's stages rendered as the same Dify-style DAG canvas as the
@@ -50,7 +35,6 @@ export function ProcessStepper({
 }: {
   process: {
     id: string;
-    categoryId: string;
     overallStatus: string;
     requireEstimates: boolean;
     responsibleUserId?: string | null;
@@ -68,21 +52,11 @@ export function ProcessStepper({
   const canEditProcess =
     isAdmin || (!!identity?.id && identity.id === process.responsibleUserId);
   const { mutate } = useCustomMutation();
-  const { result: library } = useList<StageTypeOpt>({
-    resource: "stage-types",
-    filters: [{ field: "projectId", operator: "eq", value: projectId }],
-    pagination: { mode: "off" },
-    queryOptions: { enabled: Boolean(projectId) },
-  });
-  // Only same-category stage types can be added to this process.
-  const stageTypes = (library?.data ?? []).filter(
-    (st) => st.categoryId === process.categoryId,
-  );
 
   const [openStageId, setOpenStageId] = useState<string | null>(null);
   const [addValue, setAddValue] = useState("");
   // When the process requires estimates, adding a stage opens this dialog.
-  const [pendingType, setPendingType] = useState<string | null>(null);
+  const [pendingName, setPendingName] = useState<string | null>(null);
   const [addEst, setAddEst] = useState({
     start: "",
     completed: "",
@@ -113,19 +87,21 @@ export function ProcessStepper({
   // removed (backend enforces too) — editing existing stages stays allowed.
   const structureLocked = process.overallStatus === "in_progress";
 
-  const addStage = (stageTypeId: string) => {
+  const addStage = () => {
+    const name = addValue.trim();
+    if (!name) return;
     setAddValue("");
     if (process.requireEstimates) {
       // Collect the mandatory estimates before creating the stage.
       setAddEst({ start: "", completed: "", duration: "" });
-      setPendingType(stageTypeId);
+      setPendingName(name);
       return;
     }
     mutate(
       {
         url: `${apiUrl}/processes/${process.id}/stages`,
         method: "post",
-        values: { stageTypeId },
+        values: { name },
       },
       { onSuccess: onChanged },
     );
@@ -135,13 +111,13 @@ export function ProcessStepper({
     addEst.start !== "" && addEst.completed !== "" && addEst.duration !== "";
 
   const confirmAddWithEstimates = () => {
-    if (!pendingType) return;
+    if (!pendingName) return;
     mutate(
       {
         url: `${apiUrl}/processes/${process.id}/stages`,
         method: "post",
         values: {
-          stageTypeId: pendingType,
+          name: pendingName,
           estimatedStartDate: addEst.start,
           estimatedCompletedDate: addEst.completed,
           estimatedDurationHours: Number(addEst.duration) || 0,
@@ -149,7 +125,7 @@ export function ProcessStepper({
       },
       {
         onSuccess: () => {
-          setPendingType(null);
+          setPendingName(null);
           onChanged();
         },
       },
@@ -190,7 +166,7 @@ export function ProcessStepper({
         </Suspense>
       ) : (
         <p className="mb-2 text-sm text-muted-foreground">
-          No stages. Add stage types from the library to build this process.
+          No stages. Add stages below to build this process.
         </p>
       )}
 
@@ -202,19 +178,27 @@ export function ProcessStepper({
           </p>
         ) : (
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <Select value={addValue} onValueChange={addStage}>
-              <SelectTrigger className="w-72">
-                <SelectValue placeholder="Add stage from library…" />
-              </SelectTrigger>
-              <SelectContent>
-                {stageTypes.map((st) => (
-                  <SelectItem key={st.id} value={st.id}>
-                    {st.code} · {st.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Plus className="h-4 w-4 text-muted-foreground" />
+            <Input
+              className="w-72"
+              placeholder="New stage name…"
+              value={addValue}
+              onChange={(e) => setAddValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addStage();
+                }
+              }}
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!addValue.trim()}
+              onClick={addStage}
+            >
+              <Plus className="mr-1 h-4 w-4" />
+              Add stage
+            </Button>
           </div>
         ))}
 
@@ -236,8 +220,8 @@ export function ProcessStepper({
 
       {/* Estimates required: collect them before adding the stage. */}
       <Dialog
-        open={Boolean(pendingType)}
-        onOpenChange={(o) => !o && setPendingType(null)}
+        open={Boolean(pendingName)}
+        onOpenChange={(o) => !o && setPendingName(null)}
       >
         <DialogContent className="max-w-md">
           <DialogHeader>

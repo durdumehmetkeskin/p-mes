@@ -124,7 +124,6 @@ import {
   SectionShow,
 } from "./pages/locations";
 import {
-  ProjectCategories,
   ProjectContacts,
   ProjectCustomer,
   ProjectEmployees,
@@ -134,7 +133,6 @@ import {
   ProjectFiles,
   ProjectInventory,
   ProjectMaterialDetail,
-  ProjectStageTypes,
   ProjectWorkflow,
   ProjectWorkflowTimeline,
   ProjectWorkspace,
@@ -462,11 +460,6 @@ function App() {
               { name: "orders", meta: { label: "Order" } },
               { name: "order-items", meta: { label: "Item" } },
               { name: "workflow-templates", meta: { label: "Workflow Template" } },
-              { name: "stage-types", meta: { label: "Stage Type" } },
-              {
-                name: "stage-type-categories",
-                meta: { label: "Stage Type Category" },
-              },
               { name: "processes", meta: { label: "Process" } },
 
               // ---- Partners (customers & contacts) ----
@@ -733,8 +726,6 @@ function App() {
                   <Route path="customer" element={<ProjectCustomer />} />
                   <Route path="contacts" element={<ProjectContacts />} />
                   <Route path="employees" element={<ProjectEmployees />} />
-                  <Route path="categories" element={<ProjectCategories />} />
-                  <Route path="stage-types" element={<ProjectStageTypes />} />
                   <Route path="files" element={<ProjectFiles />} />
                   <Route path="timeline" element={<ProjectWorkflowTimeline />} />
                   <Route path="workflow" element={<ProjectWorkflow />} />

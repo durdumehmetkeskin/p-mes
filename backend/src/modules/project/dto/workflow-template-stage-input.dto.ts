@@ -2,8 +2,8 @@ import {
   IsNumber,
   IsOptional,
   IsString,
-  IsUUID,
   MaxLength,
+  MinLength,
 } from 'class-validator';
 
 /**
@@ -12,14 +12,11 @@ import {
  * side as a topological display order.
  */
 export class WorkflowTemplateStageInputDto {
-  @IsUUID()
-  stageTypeId: string;
-
-  // Optional override of the stage type's name / default input / output.
-  @IsOptional()
+  // Stage display name (types were removed — the name IS the stage identity).
   @IsString()
+  @MinLength(1)
   @MaxLength(255)
-  name?: string;
+  name: string;
 
   @IsOptional()
   @IsString()

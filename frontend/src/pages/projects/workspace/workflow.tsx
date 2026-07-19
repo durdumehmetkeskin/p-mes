@@ -4,6 +4,7 @@ import {
   useDelete,
   useInvalidate,
   useList,
+  useOne,
 } from "@refinedev/core";
 import { Copy, Pencil, Plus, Trash2 } from "lucide-react";
 import { Link, useOutletContext } from "react-router";
@@ -11,13 +12,13 @@ import { Link, useOutletContext } from "react-router";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useCanEditProject } from "@/hooks/use-can-edit-project";
 import type { ProjectContext } from "./project-workspace";
 
 interface TemplateRow {
   id: string;
   name: string;
   description: string | null;
-  category: { id: string; name: string } | null;
   isSystemDefault: boolean;
   projectId: string | null;
   stages: { id: string }[];
@@ -30,12 +31,23 @@ export const ProjectWorkflow = () => {
   const { mutate: remove } = useDelete();
   const invalidate = useInvalidate();
 
+  // Workflows are visible ONLY to admins and the project's manager (backend
+  // serves the list manager-only too).
+  const { result: project } = useOne<{ managerUserId: string | null }>({
+    resource: "projects",
+    id: projectId,
+    queryOptions: { enabled: Boolean(projectId) },
+  });
+  const canEditProject = useCanEditProject();
+  const canManageWorkflows = canEditProject(project?.managerUserId);
+
   const { result } = useList<TemplateRow>({
     resource: "workflow-templates",
     filters: [{ field: "projectId", operator: "eq", value: projectId }],
     pagination: { mode: "off" },
     sorters: [{ field: "createdAt", order: "asc" }],
-    queryOptions: { enabled: Boolean(projectId) },
+    queryOptions: { enabled: Boolean(projectId) && canManageWorkflows },
+    errorNotification: false,
   });
   const rows = result?.data ?? [];
 
@@ -55,6 +67,16 @@ export const ProjectWorkflow = () => {
 
   const onDelete = (id: string) =>
     remove({ resource: "workflow-templates", id }, { onSuccess: refresh });
+
+  if (!canManageWorkflows) {
+    return (
+      <Card>
+        <CardContent className="pt-6 text-sm text-muted-foreground">
+          Bu bölümü yalnızca proje yöneticisi veya admin görüntüleyebilir.
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card>
@@ -79,7 +101,6 @@ export const ProjectWorkflow = () => {
           <thead>
             <tr className="border-b text-left text-muted-foreground">
               <th className="pb-2 font-medium">Name</th>
-              <th className="pb-2 font-medium">Category</th>
               <th className="pb-2 font-medium">Scope</th>
               <th className="pb-2 font-medium text-right">Stages</th>
               <th className="pb-2 font-medium text-right">Actions</th>
@@ -101,9 +122,6 @@ export const ProjectWorkflow = () => {
                     ) : (
                       <span className="font-medium">{t.name}</span>
                     )}
-                  </td>
-                  <td className="py-2">
-                    <Badge variant="outline">{t.category?.name ?? "—"}</Badge>
                   </td>
                   <td className="py-2">
                     {owned ? (

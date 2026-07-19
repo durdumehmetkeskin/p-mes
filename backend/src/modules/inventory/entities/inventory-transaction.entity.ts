@@ -14,6 +14,7 @@ import { Warehouse } from './warehouse.entity';
  * TRANSFER debits the source and credits the target.
  */
 @Entity('inventory_transactions')
+@Index('IDX_inv_tx_created_at', ['createdAt'])
 export class InventoryTransaction extends BaseEntity {
   @Column({ type: 'enum', enum: InventoryTransactionType })
   type: InventoryTransactionType;
@@ -47,6 +48,7 @@ export class InventoryTransaction extends BaseEntity {
   @JoinColumn({ name: 'source_warehouse_id' })
   sourceWarehouse: Warehouse | null;
 
+  @Index('IDX_inv_tx_source_warehouse_id')
   @Column({ type: 'uuid', name: 'source_warehouse_id', nullable: true })
   sourceWarehouseId: string | null;
 
@@ -73,6 +75,7 @@ export class InventoryTransaction extends BaseEntity {
   @JoinColumn({ name: 'target_warehouse_id' })
   targetWarehouse: Warehouse | null;
 
+  @Index('IDX_inv_tx_target_warehouse_id')
   @Column({ type: 'uuid', name: 'target_warehouse_id', nullable: true })
   targetWarehouseId: string | null;
 

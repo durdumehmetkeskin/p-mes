@@ -219,30 +219,6 @@ export const PERMISSIONS: PermissionDef[] = [
   { key: 'sections:create', label: 'Create', group: 'Sections' },
   { key: 'sections:update', label: 'Update', group: 'Sections' },
   { key: 'sections:delete', label: 'Delete', group: 'Sections' },
-  {
-    key: 'stage-type-categories:read',
-    label: 'Read',
-    group: 'Stage Type Categories',
-  },
-  {
-    key: 'stage-type-categories:create',
-    label: 'Create',
-    group: 'Stage Type Categories',
-  },
-  {
-    key: 'stage-type-categories:update',
-    label: 'Update',
-    group: 'Stage Type Categories',
-  },
-  {
-    key: 'stage-type-categories:delete',
-    label: 'Delete',
-    group: 'Stage Type Categories',
-  },
-  { key: 'stage-types:read', label: 'Read', group: 'Stage Types' },
-  { key: 'stage-types:create', label: 'Create', group: 'Stage Types' },
-  { key: 'stage-types:update', label: 'Update', group: 'Stage Types' },
-  { key: 'stage-types:delete', label: 'Delete', group: 'Stage Types' },
   { key: 'tool-assignments:read', label: 'Read', group: 'Tool Assignments' },
   { key: 'tool-cycle-logs:read', label: 'Read', group: 'Tool Cycle Logs' },
   {

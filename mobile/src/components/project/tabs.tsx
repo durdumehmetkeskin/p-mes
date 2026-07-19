@@ -29,6 +29,8 @@ import { FieldRow, SectionLabel } from "@/components/refine-ui/field-row";
 import { humanizeStatus } from "@/components/project/detail-config";
 import { useProjectContacts } from "@/components/project/use-project-contacts";
 import { useTeamMembers } from "@/components/project/use-team-members";
+import { useCanEditProject } from "@/hooks/use-can-edit-project";
+import { usePermissions } from "@/hooks/use-permissions";
 import { ActionMenu } from "@/components/ui/action-menu";
 import { Badge } from "@/components/ui/badge";
 import { Icon } from "@/components/ui/icon";
@@ -101,14 +103,23 @@ export function OverviewTab({ project }: { project?: BaseRecord }) {
 }
 
 // ------- Customer -------
-export function CustomerTab({ customerCompanyId }: { customerCompanyId: string | null }) {
-  const { result } = useOne<BaseRecord>({
-    resource: "customers",
-    id: customerCompanyId ?? "",
-    queryOptions: { enabled: !!customerCompanyId, retry: false },
-    errorNotification: false,
-  });
-  const c = result;
+// Served via the project-scoped endpoint (admin/manager only) so the manager
+// needs no global customers:read key. The tab itself is hidden from members.
+export function CustomerTab({
+  projectId,
+  customerCompanyId,
+}: {
+  projectId: string;
+  customerCompanyId: string | null;
+}) {
+  const [c, setC] = useState<BaseRecord | null>(null);
+  useEffect(() => {
+    if (!projectId) return;
+    axiosInstance
+      .get<{ company: BaseRecord | null }>(`/projects/${projectId}/customer`)
+      .then((r) => setC(r.data.company))
+      .catch(() => setC(null));
+  }, [projectId, customerCompanyId]);
   if (!customerCompanyId) {
     return <EmptyState title="No customer" message="This project has no linked customer." />;
   }
@@ -137,6 +148,15 @@ export function ContactsTab({
 }) {
   const router = useRouter();
   const { contacts, assignable, attach, detach } = useProjectContacts(projectId);
+  // Customer settings (contact attach/detach) are reserved to admins and the
+  // project's manager (backend mirrors with a 403); members are read-only.
+  const { result: contactsProject } = useOne<{ managerUserId?: string | null }>({
+    resource: "projects",
+    id: projectId,
+    queryOptions: { enabled: Boolean(projectId) },
+  });
+  const canEditProject = useCanEditProject();
+  const canManageContacts = canEditProject(contactsProject?.managerUserId);
 
   if (!customerCompanyId) {
     return <EmptyState title="No customer" message="Link a customer to manage contacts." />;
@@ -150,7 +170,7 @@ export function ContactsTab({
       <Card
         title={`Contacts${contacts.length ? ` (${contacts.length})` : ""}`}
         action={
-          <Can resource="projects" action="manage-contacts">
+          canManageContacts ? (
             <View className="flex-row items-center gap-1">
               <ActionMenu
                 title="Attach contact"
@@ -171,15 +191,17 @@ export function ContactsTab({
                   </Pressable>
                 )}
               />
-              <AddButton
-                onPress={() =>
-                  router.push(
-                    `/projects/${projectId}/contact-new?companyId=${customerCompanyId}`,
-                  )
-                }
-              />
+              <Can resource="contacts" action="create">
+                <AddButton
+                  onPress={() =>
+                    router.push(
+                      `/projects/${projectId}/contact-new?companyId=${customerCompanyId}`,
+                    )
+                  }
+                />
+              </Can>
             </View>
-          </Can>
+          ) : null
         }
       >
         {contacts.length === 0 ? (
@@ -198,7 +220,7 @@ export function ContactsTab({
                   {[c.role, c.email].filter(Boolean).join(" · ")}
                 </Text>
               </View>
-              <Can resource="projects" action="manage-contacts">
+              {canManageContacts && (
                 <RowDelete
                   onPress={() =>
                     confirm({
@@ -211,7 +233,7 @@ export function ContactsTab({
                     })
                   }
                 />
-              </Can>
+              )}
             </View>
           ))
         )}
@@ -281,138 +303,6 @@ export function TeamTab({ projectId }: { projectId: string }) {
   );
 }
 
-// ------- Categories -------
-export function CategoriesTab({ projectId }: { projectId: string }) {
-  const router = useRouter();
-  const { mutate: remove } = useDelete();
-  const { result } = useList<BaseRecord>({
-    resource: "stage-type-categories",
-    filters: [{ field: "projectId", operator: "eq", value: projectId }],
-    pagination: { mode: "off" },
-    queryOptions: { retry: false },
-    errorNotification: false,
-  });
-  const rows = result?.data ?? [];
-
-  return (
-    <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
-      <Card
-        title={`Categories${rows.length ? ` (${rows.length})` : ""}`}
-        action={
-          <Can resource="stage-type-categories" action="create">
-            <AddButton onPress={() => router.push(`/projects/${projectId}/category-new`)} />
-          </Can>
-        }
-      >
-        {rows.length === 0 ? (
-          <Text className="p-3 text-sm text-muted-foreground">No categories</Text>
-        ) : (
-          rows.map((c, i) => {
-            const global = !c.projectId;
-            return (
-              <View
-                key={c.id}
-                className={i > 0 ? "flex-row items-center justify-between border-t border-border p-3" : "flex-row items-center justify-between p-3"}
-              >
-                <Pressable
-                  className="flex-1"
-                  disabled={global}
-                  onPress={() =>
-                    router.push(`/projects/${projectId}/category-new?editId=${c.id}`)
-                  }
-                >
-                  <Text className="text-sm text-foreground">{c.name}</Text>
-                  <Text className="font-mono text-xs text-muted-foreground">{c.code}</Text>
-                </Pressable>
-                {global ? (
-                  <Badge variant="outline">global</Badge>
-                ) : (
-                  <Can resource="stage-type-categories" action="delete">
-                    <RowDelete
-                      onPress={() =>
-                        confirmDelete(c.name ?? c.code ?? "category", () =>
-                          remove({ resource: "stage-type-categories", id: c.id as string }),
-                        )
-                      }
-                    />
-                  </Can>
-                )}
-              </View>
-            );
-          })
-        )}
-      </Card>
-    </ScrollView>
-  );
-}
-
-// ------- Stage types -------
-export function StageTypesTab({ projectId }: { projectId: string }) {
-  const router = useRouter();
-  const { mutate: remove } = useDelete();
-  const { result } = useList<BaseRecord>({
-    resource: "stage-types",
-    filters: [{ field: "projectId", operator: "eq", value: projectId }],
-    pagination: { mode: "off" },
-    queryOptions: { retry: false },
-    errorNotification: false,
-  });
-  const rows = result?.data ?? [];
-
-  return (
-    <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
-      <Card
-        title={`Stage types${rows.length ? ` (${rows.length})` : ""}`}
-        action={
-          <Can resource="stage-types" action="create">
-            <AddButton onPress={() => router.push(`/projects/${projectId}/stage-type-new`)} />
-          </Can>
-        }
-      >
-        {rows.length === 0 ? (
-          <Text className="p-3 text-sm text-muted-foreground">No stage types</Text>
-        ) : (
-          rows.map((s, i) => {
-            const global = !s.projectId;
-            return (
-              <View
-                key={s.id}
-                className={i > 0 ? "flex-row items-center justify-between border-t border-border p-3" : "flex-row items-center justify-between p-3"}
-              >
-                <Pressable
-                  className="flex-1"
-                  disabled={global}
-                  onPress={() =>
-                    router.push(`/projects/${projectId}/stage-type-new?editId=${s.id}`)
-                  }
-                >
-                  <Text className="text-sm text-foreground">{s.name}</Text>
-                  <Text className="text-xs text-muted-foreground">
-                    {s.category?.name ?? "—"}
-                  </Text>
-                </Pressable>
-                {global ? (
-                  <Badge variant="outline">global</Badge>
-                ) : (
-                  <Can resource="stage-types" action="delete">
-                    <RowDelete
-                      onPress={() =>
-                        confirmDelete(s.name ?? s.code ?? "stage type", () =>
-                          remove({ resource: "stage-types", id: s.id as string }),
-                        )
-                      }
-                    />
-                  </Can>
-                )}
-              </View>
-            );
-          })
-        )}
-      </Card>
-    </ScrollView>
-  );
-}
-
 // ------- Workflow (templates list + builder) -------
 export function WorkflowTab({ projectId }: { projectId: string }) {
   const router = useRouter();
@@ -469,7 +359,7 @@ export function WorkflowTab({ projectId }: { projectId: string }) {
                 >
                   <Text className="text-sm text-foreground">{t.name}</Text>
                   <Text className="text-xs text-muted-foreground">
-                    {t.category?.name ?? "—"} · {t.stages?.length ?? 0} stages
+                    {t.stages?.length ?? 0} stages
                   </Text>
                 </Pressable>
                 {!owned ? (
@@ -518,15 +408,24 @@ export function OrdersTab({ projectId }: { projectId: string }) {
     errorNotification: false,
   });
   const rows = result?.data ?? [];
+  // Creating an order is reserved to admins and the project's manager
+  // (backend mirrors with a 403).
+  const { result: ordersProject } = useOne<{ managerUserId?: string | null }>({
+    resource: "projects",
+    id: projectId,
+    queryOptions: { enabled: Boolean(projectId) },
+  });
+  const canEditProject = useCanEditProject();
+  const canManageOrders = canEditProject(ordersProject?.managerUserId);
 
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
       <Card
         title={`Orders${rows.length ? ` (${rows.length})` : ""}`}
         action={
-          <Can resource="orders" action="create">
+          canManageOrders ? (
             <AddButton onPress={() => router.push(`/projects/${projectId}/order-new`)} />
-          </Can>
+          ) : null
         }
       >
         {rows.length === 0 ? (
@@ -560,9 +459,24 @@ export function OrdersTab({ projectId }: { projectId: string }) {
 }
 
 export function FilesTab({ projectId }: { projectId: string }) {
+  // Project files are managed only by an admin or the project's manager
+  // (backend mirrors with a 403); members read/download only.
+  const { result: project } = useOne<{ managerUserId?: string | null }>({
+    resource: "projects",
+    id: projectId,
+    queryOptions: { enabled: Boolean(projectId) },
+  });
+  const canEditProject = useCanEditProject();
+  const { has } = usePermissions();
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
-      <AttachmentsPanel ownerType="project" ownerId={projectId} />
+      <AttachmentsPanel
+        ownerType="project"
+        ownerId={projectId}
+        canUpload={
+          canEditProject(project?.managerUserId) && has("attachments:create")
+        }
+      />
     </ScrollView>
   );
 }

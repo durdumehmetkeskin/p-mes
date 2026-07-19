@@ -8,13 +8,13 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Trash2 } from "lucide-react-native";
 
-import { Can } from "@/components/can";
 import { confirmDelete } from "@/components/refine-ui/confirm";
 import { FieldRow, SectionLabel } from "@/components/refine-ui/field-row";
 import { Screen } from "@/components/refine-ui/screen";
 import { Icon } from "@/components/ui/icon";
 import { Skeleton } from "@/components/ui/skeleton";
 import { humanizeStatus } from "@/components/project/detail-config";
+import { useCanEditProject } from "@/hooks/use-can-edit-project";
 import { OrderItemsList } from "@/components/order/order-items-list";
 import { OrderRequirementsList } from "@/components/order/order-requirements-list";
 import { colors } from "@/lib/theme";
@@ -33,6 +33,16 @@ export default function OrderDetailScreen() {
   const router = useRouter();
   const { query, result } = useOne<Order>({ resource: "orders", id: orderId });
   const o = result;
+
+  // Deleting an order is reserved to admins and the project's manager
+  // (backend mirrors with a 403).
+  const { result: project } = useOne<{ managerUserId?: string | null }>({
+    resource: "projects",
+    id: id as string,
+    queryOptions: { enabled: Boolean(id) },
+  });
+  const canEditProject = useCanEditProject();
+  const canManageOrders = canEditProject(project?.managerUserId);
 
   // Leaf-first: an order can only be deleted once it has no processes.
   const { result: processList } = useList<BaseRecord>({
@@ -60,16 +70,14 @@ export default function OrderDetailScreen() {
       canGoBack
       headerRight={
         <View className="flex-row items-center gap-1">
-          {!hasProcesses ? (
-            <Can resource="orders" action="delete">
-              <Pressable
-                onPress={onDeleteOrder}
-                hitSlop={6}
-                className="h-9 w-9 items-center justify-center rounded-md active:bg-accent"
-              >
-                <Icon icon={Trash2} size={18} color={colors.destructive} />
-              </Pressable>
-            </Can>
+          {!hasProcesses && canManageOrders ? (
+            <Pressable
+              onPress={onDeleteOrder}
+              hitSlop={6}
+              className="h-9 w-9 items-center justify-center rounded-md active:bg-accent"
+            >
+              <Icon icon={Trash2} size={18} color={colors.destructive} />
+            </Pressable>
           ) : null}
         </View>
       }

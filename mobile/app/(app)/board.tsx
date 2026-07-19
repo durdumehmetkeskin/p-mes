@@ -22,7 +22,7 @@ interface StageCard {
   projectName: string | null;
   orderId: string | null;
   orderNumber: string | null;
-  categoryName: string | null;
+  processName: string | null;
   estimatedStartDate: string | null;
   estimatedCompletedDate: string | null;
 }
@@ -206,8 +206,8 @@ export default function BoardScreen() {
                             <Text className="flex-1 text-sm text-foreground">
                               {c.sequence}. {c.name}
                             </Text>
-                            {c.categoryName ? (
-                              <Badge variant="outline">{c.categoryName}</Badge>
+                            {c.processName ? (
+                              <Badge variant="outline">{c.processName}</Badge>
                             ) : null}
                           </View>
                           <Text className="text-xs text-muted-foreground">

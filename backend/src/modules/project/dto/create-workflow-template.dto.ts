@@ -27,10 +27,6 @@ export class CreateWorkflowTemplateDto {
   @MaxLength(1000)
   description?: string;
 
-  // Dynamic category (StageTypeCategory id). Stages must share this category.
-  @IsUUID()
-  categoryId: string;
-
   // Stage nodes. May be empty (stages can be added later).
   @IsOptional()
   @IsArray()

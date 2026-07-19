@@ -122,8 +122,6 @@ export const resources: ResourceProps[] = [
     meta: { label: "Contacts", canDelete: true, parent: "project-mgmt" },
   },
   { name: "workflow-templates", meta: { label: "Workflow Template" } },
-  { name: "stage-types", meta: { label: "Stage Type" } },
-  { name: "stage-type-categories", meta: { label: "Stage Type Category" } },
   { name: "processes", meta: { label: "Process" } },
   { name: "process-stages", meta: { label: "Process Stage" } },
 

@@ -1,4 +1,5 @@
-import { Pressable, Text, View } from "react-native";
+import { useState } from "react";
+import { Pressable, Text, TextInput, View } from "react-native";
 import {
   type BaseRecord,
   useGetIdentity,
@@ -31,8 +32,6 @@ interface Stage extends BaseRecord {
 }
 interface Process extends BaseRecord {
   id: string;
-  categoryId?: string;
-  category?: { name?: string };
   overallStatus?: string;
   responsibleUserId?: string | null;
   responsibleUser?: { name?: string };
@@ -105,16 +104,9 @@ function ProcessCard({
   // Structure freeze: while the process runs, stages can't be added or
   // removed (backend enforces too) — editing existing stages stays allowed.
   const structureLocked = process.overallStatus === "in_progress";
-  const { result: stageTypesRes } = useList<BaseRecord>({
-    resource: "stage-types",
-    filters: process.categoryId
-      ? [{ field: "categoryId", operator: "eq", value: process.categoryId }]
-      : [],
-    pagination: { mode: "off" },
-    queryOptions: { enabled: !!process.categoryId, retry: false },
-    errorNotification: false,
-  });
-  const stageTypes = stageTypesRes?.data ?? [];
+  // Types were removed — a stage is added by name alone.
+  const [addingStage, setAddingStage] = useState(false);
+  const [newStageName, setNewStageName] = useState("");
 
   const stages = [...(process.stages ?? [])].sort(
     (a, b) => (a.sequence ?? 0) - (b.sequence ?? 0),
@@ -132,11 +124,16 @@ function ProcessCard({
     }
   };
 
-  const addStage = (stageTypeId: string) =>
-    run(
-      () => axiosInstance.post(`/processes/${process.id}/stages`, { stageTypeId }),
+  const addStage = () => {
+    const name = newStageName.trim();
+    if (!name) return;
+    setNewStageName("");
+    setAddingStage(false);
+    void run(
+      () => axiosInstance.post(`/processes/${process.id}/stages`, { name }),
       "Stage added",
     );
+  };
 
   const deleteStage = (stageId: string) =>
     confirmDelete("stage", () =>
@@ -163,7 +160,7 @@ function ProcessCard({
       <View className="flex-row items-center justify-between border-b border-border p-3">
         <View className="flex-1">
           <Text className="font-sans-semibold text-sm text-card-foreground">
-            {process.category?.name ?? "Process"}
+            {"Process"}
           </Text>
           <Text className="text-xs text-muted-foreground">
             {humanizeStatus(process.overallStatus)}
@@ -207,18 +204,13 @@ function ProcessCard({
           </Can>
           {structureLocked ? null : (
           <Can resource="process-stages" action="create-stages">
-            <ActionMenu
-              title="Add stage"
-              options={stageTypes.map((st) => ({
-                label: String(st.name),
-                onPress: () => addStage(st.id as string),
-              }))}
-              trigger={(open) => (
-                <Pressable onPress={open} hitSlop={6} className="h-8 w-8 items-center justify-center rounded-md active:bg-accent">
-                  <Icon icon={Plus} size={18} color={colors.foreground} />
-                </Pressable>
-              )}
-            />
+            <Pressable
+              onPress={() => setAddingStage((v) => !v)}
+              hitSlop={6}
+              className="h-8 w-8 items-center justify-center rounded-md active:bg-accent"
+            >
+              <Icon icon={Plus} size={18} color={colors.foreground} />
+            </Pressable>
           </Can>
           )}
           {/* Leaf-first: a process can only be deleted once it has no stages. */}
@@ -231,6 +223,29 @@ function ProcessCard({
           ) : null}
         </View>
       </View>
+
+      {/* Inline add-stage row (types removed — a stage is just a name). */}
+      {addingStage && !structureLocked ? (
+        <View className="flex-row items-center gap-2 border-t border-border p-3">
+          <TextInput
+            className="h-10 flex-1 rounded-md border border-input bg-background px-3 text-sm text-foreground"
+            placeholder="New stage name…"
+            placeholderTextColor={colors.mutedForeground}
+            value={newStageName}
+            onChangeText={setNewStageName}
+            onSubmitEditing={addStage}
+            autoFocus
+            returnKeyType="done"
+          />
+          <Pressable
+            onPress={addStage}
+            disabled={!newStageName.trim()}
+            className="h-10 items-center justify-center rounded-md border border-border px-3 active:bg-accent"
+          >
+            <Text className="text-sm text-foreground">Add</Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       {stages.length === 0 ? (
         <Text className="p-3 text-sm text-muted-foreground">No stages yet</Text>

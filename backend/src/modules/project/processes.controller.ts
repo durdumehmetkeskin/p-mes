@@ -27,7 +27,6 @@ import { ProcessesService } from './processes.service';
 import { resolveListQuery } from '../../common/query/list-query.util';
 
 const SORTABLE: ReadonlyArray<keyof Process> = [
-  'category',
   'overallStatus',
   'createdAt',
   'updatedAt',

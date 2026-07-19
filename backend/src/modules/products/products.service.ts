@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -82,7 +83,7 @@ export class ProductsService {
       // order_id NULL.
       const stage = await this.stages.findOne({
         where: { id: dto.stageId },
-        relations: { process: { orderItem: { order: true } } },
+        relations: { process: { orderItem: { order: true } }, workers: true },
       });
       if (!stage?.process?.orderItem?.order) {
         throw new NotFoundException(`Stage ${dto.stageId} not found`);
@@ -94,6 +95,18 @@ export class ProductsService {
         !(await this.projects.isMember(order.projectId, user.id))
       ) {
         throw new NotFoundException(`Stage ${dto.stageId} not found`);
+      }
+      // Recording a stage's output is stage work: only that stage's workers,
+      // the process responsible or an admin — other members are view-only.
+      if (
+        user &&
+        !ProjectsService.isAdmin(user) &&
+        stage.process.responsibleUserId !== user.id &&
+        !(stage.workers ?? []).some((w) => w.id === user.id)
+      ) {
+        throw new ForbiddenException(
+          'Bu aşamaya çıktı kaydını yalnızca aşama çalışanı, proses sorumlusu veya admin ekleyebilir.',
+        );
       }
       product.stage = stage;
       product.process = stage.process;
@@ -312,6 +325,9 @@ export class ProductsService {
     ) {
       throw new NotFoundException(`Stage ${stageId} not found`);
     }
+    // A stage's inputs are planned by the process responsible (or an admin) —
+    // stage workers only record outputs.
+    this.assertStageInputEditor(stage.process, user);
     product.consumedByStage = stage;
     await this.productsRepository.save(product);
     return this.findOne(id, user);
@@ -410,10 +426,32 @@ export class ProductsService {
   /** Release the product from its consuming stage (undo `consume`). */
   async release(id: string, user?: User): Promise<Product> {
     const product = await this.findOne(id, user); // inherits scoping
+    // Same rule as consume: only the process responsible or an admin may
+    // change a stage's planned inputs.
+    if (product.consumedByStageId) {
+      const stage = await this.stages.findOne({
+        where: { id: product.consumedByStageId },
+        relations: { process: true },
+      });
+      if (stage?.process) this.assertStageInputEditor(stage.process, user);
+    }
     product.consumedByStage = null;
     product.consumedByStageId = null;
     await this.productsRepository.save(product);
     return this.findOne(id, user);
+  }
+
+  /** Stage inputs are planned by the owning process's responsible (or admin). */
+  private assertStageInputEditor(
+    process: { responsibleUserId?: string | null },
+    user?: User,
+  ): void {
+    if (ProjectsService.isAdmin(user)) return;
+    if (!user || process.responsibleUserId !== user.id) {
+      throw new ForbiddenException(
+        'Aşama girdilerini yalnızca proses sorumlusu veya admin belirleyebilir.',
+      );
+    }
   }
 }
 

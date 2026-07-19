@@ -39,6 +39,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { axiosInstance } from "@/providers/axios";
+import { usePermissions } from "@/hooks/use-permissions";
 
 interface MaterialOption {
   id: string;
@@ -295,7 +296,15 @@ function StatusCell({ r }: { r: RequirementRow }) {
   return <span className="text-xs text-muted-foreground">not reserved</span>;
 }
 
-export const OrderRequiredMaterials = ({ orderId }: { orderId: string }) => {
+export const OrderRequiredMaterials = ({
+  orderId,
+  canManage = false,
+}: {
+  orderId: string;
+  /** Editing the requirements list is reserved to admins and the project's
+   *  manager (backend mirrors with a 403); members are read-only. */
+  canManage?: boolean;
+}) => {
   const { mutate: remove } = useDelete();
   const invalidate = useInvalidate();
   const { open } = useNotification();
@@ -309,9 +318,14 @@ export const OrderRequiredMaterials = ({ orderId }: { orderId: string }) => {
   });
   const rows = result?.data ?? [];
 
+  // Material picker data — needs the materials:read key; a plain member
+  // would just collect 403s in the console, so don't even ask without it.
+  const { has } = usePermissions();
   const { result: materialsResult } = useList<MaterialOption>({
     resource: "materials",
     pagination: { mode: "off" },
+    queryOptions: { enabled: canManage && has("materials:read"), retry: false },
+    errorNotification: false,
   });
   const allMaterials = materialsResult?.data ?? [];
   // Only offer materials not already in the list.
@@ -378,16 +392,18 @@ export const OrderRequiredMaterials = ({ orderId }: { orderId: string }) => {
             <span className="text-sm font-normal text-muted-foreground">
               {rows.length} total
             </span>
-            <RequirementDialog
-              orderId={orderId}
-              materials={availableMaterials}
-              trigger={
-                <Button size="sm" variant="outline">
-                  <Plus className="mr-1 h-4 w-4" />
-                  Add material
-                </Button>
-              }
-            />
+            {canManage && (
+              <RequirementDialog
+                orderId={orderId}
+                materials={availableMaterials}
+                trigger={
+                  <Button size="sm" variant="outline">
+                    <Plus className="mr-1 h-4 w-4" />
+                    Add material
+                  </Button>
+                }
+              />
+            )}
           </div>
         </CardTitle>
       </CardHeader>
@@ -456,23 +472,27 @@ export const OrderRequiredMaterials = ({ orderId }: { orderId: string }) => {
                                 : "Reserve"}
                           </Button>
                         )}
-                        <RequirementDialog
-                          record={r}
-                          orderId={orderId}
-                          materials={availableMaterials}
-                          trigger={
-                            <Button size="icon" variant="outline">
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                          }
-                        />
-                        <Button
-                          size="icon"
-                          variant="destructive"
-                          onClick={() => onDelete(r.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {canManage && (
+                          <RequirementDialog
+                            record={r}
+                            orderId={orderId}
+                            materials={availableMaterials}
+                            trigger={
+                              <Button size="icon" variant="outline">
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                            }
+                          />
+                        )}
+                        {canManage && (
+                          <Button
+                            size="icon"
+                            variant="destructive"
+                            onClick={() => onDelete(r.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     </td>
                   </tr>

@@ -17,12 +17,10 @@ import { ProjectMaterialReordersController } from './project-material-reorders.c
 import { ProjectMaterialReordersService } from './project-material-reorders.service';
 import { ProjectsController } from './projects.controller';
 import { ProjectsService } from './projects.service';
+import { MyWorkController } from './my-work.controller';
+import { MyWorkService } from './my-work.service';
 import { StageBoardController } from './stage-board.controller';
 import { StageBoardService } from './stage-board.service';
-import { StageTypesController } from './stage-types.controller';
-import { StageTypesService } from './stage-types.service';
-import { StageTypeCategoriesController } from './stage-type-categories.controller';
-import { StageTypeCategoriesService } from './stage-type-categories.service';
 import { WorkflowTemplatesController } from './workflow-templates.controller';
 import { WorkflowTemplatesService } from './workflow-templates.service';
 import { WorkloadController } from './workload.controller';
@@ -38,8 +36,6 @@ import { StageCompletionReport } from './entities/stage-completion-report.entity
 import { Project } from './entities/project.entity';
 import { OrderMaterialRequirement } from './entities/order-material-requirement.entity';
 import { ProjectMaterialReorder } from './entities/project-material-reorder.entity';
-import { StageType } from './entities/stage-type.entity';
-import { StageTypeCategory } from './entities/stage-type-category.entity';
 import { WorkflowTemplateStage } from './entities/workflow-template-stage.entity';
 import { WorkflowTemplateStageLink } from './entities/workflow-template-stage-link.entity';
 import { WorkflowTemplate } from './entities/workflow-template.entity';
@@ -64,8 +60,6 @@ import { ProjectAllocationsService } from './project-allocations.service';
       Project,
       Order,
       OrderItem,
-      StageType,
-      StageTypeCategory,
       WorkflowTemplate,
       WorkflowTemplateStage,
       WorkflowTemplateStageLink,
@@ -97,14 +91,13 @@ import { ProjectAllocationsService } from './project-allocations.service';
     ProjectsController,
     OrdersController,
     OrderItemsController,
-    StageTypesController,
-    StageTypeCategoriesController,
     WorkflowTemplatesController,
     ProcessesController,
     ProcessStagesController,
     ToolReservationsController,
     WorkloadController,
     StageBoardController,
+    MyWorkController,
     OrderMaterialRequirementsController,
     ProjectMaterialReordersController,
   ],
@@ -112,14 +105,13 @@ import { ProjectAllocationsService } from './project-allocations.service';
     ProjectsService,
     OrdersService,
     OrderItemsService,
-    StageTypesService,
-    StageTypeCategoriesService,
     WorkflowTemplatesService,
     ProcessesService,
     ProcessStagesService,
     ToolReservationsService,
     WorkloadService,
     StageBoardService,
+    MyWorkService,
     ProjectAllocationsService,
     OrderMaterialRequirementsService,
     ProjectMaterialReordersService,

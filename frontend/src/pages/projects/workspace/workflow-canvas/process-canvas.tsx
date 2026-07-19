@@ -34,6 +34,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { axiosInstance } from "@/providers/axios";
+import { usePermissions } from "@/hooks/use-permissions";
 import { ConfirmDelete } from "../confirm-delete";
 import { computeUnlockedIds, layoutDag, wouldCreateCycle } from "./dag-layout";
 import {
@@ -403,11 +404,17 @@ function ProcessCanvasInner({
 
   // Where each stage will run: its section reservation(s). Section carries
   // only locationId, so location names come from the (small) locations list.
+  // Decoration only — don't even ask without the read key (a plain member
+  // would just collect 403s in the console).
+  const { has } = usePermissions();
   const { result: reservations } = useList<SectionReservationRow>({
     resource: "section-reservations",
     filters: [{ field: "orderId", operator: "eq", value: orderId ?? "" }],
     pagination: { mode: "off" },
-    queryOptions: { enabled: Boolean(orderId), retry: false },
+    queryOptions: {
+      enabled: Boolean(orderId) && has("section-reservations:read"),
+      retry: false,
+    },
     errorNotification: false,
   });
   const { result: locations } = useList<LocationRow>({
