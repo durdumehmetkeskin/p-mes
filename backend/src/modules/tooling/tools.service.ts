@@ -13,25 +13,13 @@ import {
 } from '../inventory/warehouse-scope.service';
 import { QrService } from '../qr/qr.service';
 import { QrResult } from '../qr/qr.types';
-import { EntityManager } from 'typeorm';
-import { AddToolCyclesDto } from './dto/add-tool-cycles.dto';
-import { AssignToolDto } from './dto/assign-tool.dto';
 import { ChangeToolStatusDto } from './dto/change-tool-status.dto';
 import { CreateToolDto } from './dto/create-tool.dto';
-import { EndToolUsageDto } from './dto/end-tool-usage.dto';
-import { ResetToolCyclesDto } from './dto/reset-tool-cycles.dto';
-import { ReturnToolDto } from './dto/return-tool.dto';
-import { StartToolUsageDto } from './dto/start-tool-usage.dto';
 import { UpdateToolDto } from './dto/update-tool.dto';
-import { ToolCycleLog } from './entities/tool-cycle-log.entity';
 import { ToolStatusHistory } from './entities/tool-status-history.entity';
 import { Tool } from './entities/tool.entity';
-import { ToolAssignmentStatus } from './enums/tool-assignment-status.enum';
 import { ToolCategory } from './enums/tool-category.enum';
 import { ToolStatus } from './enums/tool-status.enum';
-import { ToolUsageStatus } from './enums/tool-usage-status.enum';
-import { ToolAssignmentsRepository } from './tool-assignments.repository';
-import { ToolUsagesRepository } from './tool-usages.repository';
 import { ToolTypesService } from './tool-types.service';
 import { ToolsRepository } from './tools.repository';
 
@@ -47,8 +35,6 @@ export class ToolsService {
     private readonly toolsRepository: ToolsRepository,
     private readonly toolTypesService: ToolTypesService,
     private readonly racksService: RacksService,
-    private readonly assignmentsRepository: ToolAssignmentsRepository,
-    private readonly usagesRepository: ToolUsagesRepository,
     private readonly qrService: QrService,
   ) {}
 
@@ -68,6 +54,7 @@ export class ToolsService {
     if (rackId) {
       tool.rack = await this.racksService.findOne(rackId);
     }
+    this.assertRackMatchesProject(dto.projectId ?? null, tool.rack ?? null);
 
     // A warehouse responsible may only place a new tool into a rack in one of
     // their warehouses (an unplaced tool has no warehouse and is out of scope).
@@ -150,9 +137,36 @@ export class ToolsService {
     if (rackId !== undefined) {
       tool.rack = rackId ? await this.racksService.findOne(rackId) : null;
     }
+    // Only when the edit touches placement, so scalar edits on legacy tools
+    // with an out-of-project rack keep working.
+    if (dto.projectId !== undefined || dto.rackId !== undefined) {
+      this.assertRackMatchesProject(tool.projectId ?? null, tool.rack ?? null);
+    }
 
     await this.toolsRepository.save(tool);
     return this.findOne(id); // reload eager relations
+  }
+
+  /**
+   * A project tool must sit on a rack in one of the project's zones — the
+   * zone is derived from the rack, so this is the whole "cannot go to another
+   * zone" rule. Project-less tools are unconstrained.
+   */
+  private assertRackMatchesProject(
+    projectId: string | null,
+    rack: Tool['rack'],
+  ): void {
+    if (!projectId) return;
+    if (!rack) {
+      throw new BadRequestException(
+        'Projeye ait takım için projenin bölgesinden bir raf seçilmelidir.',
+      );
+    }
+    if (rack.zone?.projectId !== projectId) {
+      throw new BadRequestException(
+        'Projeye ait takım yalnızca projenin bölgesindeki bir rafa konabilir.',
+      );
+    }
   }
 
   /**
@@ -179,6 +193,10 @@ export class ToolsService {
         toolId: tool.id,
         fromStatus,
         toStatus: dto.status,
+        // Custody rides on the status row: an in_use entry says who holds it;
+        // the next non-in_use entry IS the return.
+        assignedTo:
+          dto.status === ToolStatus.InUse ? (dto.assignedTo ?? null) : null,
         note: dto.note ?? null,
         changedById: actor?.id ?? null,
         changedByEmail: actor?.email ?? null,
@@ -187,215 +205,6 @@ export class ToolsService {
     });
 
     return this.findOne(id);
-  }
-
-  /**
-   * Assign (check out) a tool to an assignee. A tool can have at most one
-   * ACTIVE assignment — rejects if it is already assigned.
-   */
-  async assign(
-    id: string,
-    dto: AssignToolDto,
-    actor?: StatusActor,
-    scope: WarehouseScope = 'ALL',
-  ): Promise<Tool> {
-    const tool = await this.findOne(id, scope);
-
-    const active = await this.assignmentsRepository.findActiveByTool(id);
-    if (active) {
-      throw new ConflictException(
-        `Tool is already assigned to ${active.assignedTo}`,
-      );
-    }
-
-    const assignment = this.assignmentsRepository.create({
-      toolId: tool.id,
-      assignedTo: dto.assignedTo,
-      note: dto.note ?? null,
-      status: ToolAssignmentStatus.Active,
-      assignedById: actor?.id ?? null,
-      assignedByEmail: actor?.email ?? null,
-    });
-    await this.assignmentsRepository.save(assignment);
-
-    return this.findOne(id);
-  }
-
-  /** Return (check in) a tool's active assignment. */
-  async return(
-    id: string,
-    dto: ReturnToolDto,
-    actor?: StatusActor,
-    scope: WarehouseScope = 'ALL',
-  ): Promise<Tool> {
-    await this.findOne(id, scope);
-
-    const active = await this.assignmentsRepository.findActiveByTool(id);
-    if (!active) {
-      throw new BadRequestException('Tool has no active assignment');
-    }
-
-    active.status = ToolAssignmentStatus.Returned;
-    active.returnedAt = new Date();
-    active.returnNote = dto.note ?? null;
-    active.returnedById = actor?.id ?? null;
-    active.returnedByEmail = actor?.email ?? null;
-    await this.assignmentsRepository.save(active);
-
-    return this.findOne(id);
-  }
-
-  /**
-   * Start a usage session (put the tool to work). A tool can have at most one
-   * ONGOING session — rejects if it is already in use.
-   */
-  async startUsage(
-    id: string,
-    dto: StartToolUsageDto,
-    actor?: StatusActor,
-    scope: WarehouseScope = 'ALL',
-  ): Promise<Tool> {
-    const tool = await this.findOne(id, scope);
-
-    const ongoing = await this.usagesRepository.findOngoingByTool(id);
-    if (ongoing) {
-      throw new ConflictException('Tool already has an ongoing usage session');
-    }
-
-    const usage = this.usagesRepository.create({
-      toolId: tool.id,
-      usedFor: dto.usedFor ?? null,
-      note: dto.note ?? null,
-      status: ToolUsageStatus.Ongoing,
-      startedAt: new Date(),
-      recordedById: actor?.id ?? null,
-      recordedByEmail: actor?.email ?? null,
-    });
-    await this.usagesRepository.save(usage);
-
-    return this.findOne(id);
-  }
-
-  /**
-   * End the tool's ongoing usage session: stamps endedAt, computes the elapsed
-   * minutes and records the output quantity. End of production also bumps the
-   * cycle counter (currentLifeCycle) by the produced cycles (≥ 1), in the same
-   * transaction, and logs the change.
-   */
-  async endUsage(
-    id: string,
-    dto: EndToolUsageDto,
-    scope: WarehouseScope = 'ALL',
-  ): Promise<Tool> {
-    const tool = await this.findOne(id, scope);
-
-    const ongoing = await this.usagesRepository.findOngoingByTool(id);
-    if (!ongoing) {
-      throw new BadRequestException('Tool has no ongoing usage session');
-    }
-
-    const endedAt = new Date();
-    ongoing.endedAt = endedAt;
-    ongoing.durationMinutes = Math.max(
-      0,
-      Math.round((endedAt.getTime() - ongoing.startedAt.getTime()) / 60000),
-    );
-    ongoing.quantity = dto.quantity ?? null;
-    ongoing.status = ToolUsageStatus.Completed;
-    if (dto.note) ongoing.note = dto.note;
-
-    // Each production end increments the cycle counter by the produced cycles
-    // (default 1 when no quantity was recorded).
-    const increment =
-      dto.quantity != null ? Math.max(0, Math.round(dto.quantity)) : 1;
-
-    await this.dataSource.transaction(async (manager) => {
-      await manager.save(ongoing);
-      if (increment > 0) {
-        tool.currentLifeCycle += increment;
-        await manager.save(tool);
-        await this.writeCycleLog(
-          manager,
-          tool,
-          increment,
-          'usage',
-          ongoing.usedFor,
-        );
-      }
-    });
-
-    return this.findOne(id);
-  }
-
-  /** Manually add cycles to the counter (e.g. recording a past production). */
-  async addCycles(
-    id: string,
-    dto: AddToolCyclesDto,
-    actor?: StatusActor,
-    scope: WarehouseScope = 'ALL',
-  ): Promise<Tool> {
-    const tool = await this.findOne(id, scope);
-
-    await this.dataSource.transaction(async (manager) => {
-      tool.currentLifeCycle += dto.cycles;
-      await manager.save(tool);
-      await this.writeCycleLog(
-        manager,
-        tool,
-        dto.cycles,
-        'manual',
-        dto.note ?? null,
-        actor,
-      );
-    });
-
-    return this.findOne(id);
-  }
-
-  /** Reset the cycle counter to 0 (e.g. after a regrind / maintenance). */
-  async resetCycles(
-    id: string,
-    dto: ResetToolCyclesDto,
-    actor?: StatusActor,
-    scope: WarehouseScope = 'ALL',
-  ): Promise<Tool> {
-    const tool = await this.findOne(id, scope);
-    const previous = tool.currentLifeCycle;
-
-    await this.dataSource.transaction(async (manager) => {
-      tool.currentLifeCycle = 0;
-      await manager.save(tool);
-      await this.writeCycleLog(
-        manager,
-        tool,
-        -previous,
-        'reset',
-        dto.note ?? null,
-        actor,
-      );
-    });
-
-    return this.findOne(id);
-  }
-
-  private async writeCycleLog(
-    manager: EntityManager,
-    tool: Tool,
-    cycles: number,
-    source: string,
-    note: string | null,
-    actor?: StatusActor,
-  ): Promise<void> {
-    const log = manager.create(ToolCycleLog, {
-      toolId: tool.id,
-      cycles,
-      resultingLifeCycle: tool.currentLifeCycle,
-      source,
-      note,
-      recordedById: actor?.id ?? null,
-      recordedByEmail: actor?.email ?? null,
-    });
-    await manager.save(log);
   }
 
   async remove(id: string, scope: WarehouseScope = 'ALL'): Promise<void> {

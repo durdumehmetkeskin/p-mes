@@ -296,24 +296,11 @@ const INVENTORY_TOOLING = wrap(
   <div class="kpi"><div class="num">{{formatNumber summary.materialBalances}}</div><div class="lbl">Stok Kaydı</div></div>
   <div class="kpi"><div class="num">{{formatNumber summary.lowStockCount}}</div><div class="lbl">Düşük Stok</div></div>
   <div class="kpi"><div class="num">{{formatNumber summary.toolCount}}</div><div class="lbl">Takım</div></div>
-  <div class="kpi"><div class="num">{{formatNumber summary.nearEolCount}}</div><div class="lbl">Ömrü Dolmak Üzere</div></div>
 </div>
 
 <div class="grid2">
   ${donutPanel('Stok Sağlığı', 'charts.stockHealth', '{{formatNumber summary.materialBalances}}', 'Kayıt')}
   ${donutPanel('Takım Durumu', 'charts.toolStatus', '{{formatNumber summary.toolCount}}', 'Takım')}
-</div>
-
-<div class="grid2">
-  ${pctBarsPanel('Takım Ömür Kullanımı (%)', 'charts.toolLife', 'Ömür verisi bulunamadı.')}
-  <div class="panel">
-    <h3>Özet</h3>
-    <div class="bars">
-      <div class="bar-row"><span class="bar-label">Yeterli Stok</span><div class="bar-track"><div class="bar-fill" style="width:{{barWidth summary.materialBalances summary.materialBalances}};background:#16a34a"></div></div><span class="bar-val">{{formatNumber summary.materialBalances}}</span></div>
-      <div class="bar-row"><span class="bar-label">Düşük Stok</span><div class="bar-track"><div class="bar-fill" style="width:{{barWidth summary.lowStockCount summary.materialBalances}};background:#dc2626"></div></div><span class="bar-val">{{formatNumber summary.lowStockCount}}</span></div>
-      <div class="bar-row"><span class="bar-label">Ömrü Dolan</span><div class="bar-track"><div class="bar-fill" style="width:{{barWidth summary.nearEolCount summary.toolCount}};background:#ea580c"></div></div><span class="bar-val">{{formatNumber summary.nearEolCount}}</span></div>
-    </div>
-  </div>
 </div>
 
 <div class="section-title">Stok Seviyeleri</div>
@@ -340,7 +327,7 @@ const INVENTORY_TOOLING = wrap(
 <div class="section-title" style="margin-top:16px;">Takımlar</div>
 {{#if summary.toolCount}}
 <table class="data">
-  <thead><tr><th>Kod</th><th>Ad</th><th>Kategori</th><th>Durum</th><th>Mevcut Ömür</th><th>Maks.</th><th>Kullanım %</th><th>Bakım</th></tr></thead>
+  <thead><tr><th>Kod</th><th>Ad</th><th>Kategori</th><th>Durum</th><th>Tip</th><th>Adet</th></tr></thead>
   <tbody>
     {{#each tools}}
       <tr>
@@ -348,10 +335,8 @@ const INVENTORY_TOOLING = wrap(
         <td>{{name}}</td>
         <td>{{category}}</td>
         <td>{{status}}</td>
-        <td>{{formatNumber currentLifeCycle}}</td>
-        <td>{{defaultTo (formatNumber maxLifeCycle) "-"}}</td>
-        <td>{{#if lifeUsedPct}}{{percent lifeUsedPct}}{{else}}-{{/if}}</td>
-        <td>{{formatDate nextMaintenanceDate}}</td>
+        <td>{{defaultTo type "-"}}</td>
+        <td>{{formatNumber quantity}}</td>
       </tr>
     {{/each}}
   </tbody>

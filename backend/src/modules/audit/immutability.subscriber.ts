@@ -8,16 +8,11 @@ import {
 } from 'typeorm';
 
 // Entities that must never be updated (append-only).
-const NO_UPDATE: ReadonlySet<string> = new Set([
-  'AuditLog',
-  'ToolStatusHistory',
-  'ToolCycleLog',
-]);
+const NO_UPDATE: ReadonlySet<string> = new Set(['AuditLog', 'ToolStatusHistory']);
 
 // Entities that must never be deleted (immutable history).
 const NO_DELETE: ReadonlySet<string> = new Set([
   'AuditLog',
-  'ToolCycleLog',
   'InventoryTransaction',
   'ToolStatusHistory',
 ]);

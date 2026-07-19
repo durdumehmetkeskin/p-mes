@@ -8,9 +8,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toolCategoryLabel } from "./tool-form-fields";
 import { ToolStatusCard } from "./tool-status-card";
-import { ToolAssignmentCard } from "./tool-assignment-card";
-import { ToolUsageCard } from "./tool-usage-card";
-import { ToolCycleCard } from "./tool-cycle-card";
 import { ToolReservationCalendarCard } from "./tool-reservation-calendar-card";
 
 interface ToolRecord {
@@ -23,12 +20,12 @@ interface ToolRecord {
   description: string | null;
   manufacturer: string | null;
   serialNumber: string | null;
-  rack: { code: string; warehouse?: { code?: string } | null } | null;
+  rack: {
+    code: string;
+    zone?: { code?: string; warehouse?: { code?: string } | null } | null;
+  } | null;
   quantity: number;
   purchaseDate: string | null;
-  nextMaintenanceDate: string | null;
-  currentLifeCycle: number;
-  maxLifeCycle: number | null;
   customerId: string | null;
   projectId: string | null;
   isActive: boolean;
@@ -85,18 +82,19 @@ export const ToolsShow = () => {
               />
               <Field label="Manufacturer">{record.manufacturer ?? "—"}</Field>
               <Field label="Serial number">{record.serialNumber ?? "—"}</Field>
-              <Field label="Rack">
+              <Field label="Location (warehouse / zone / rack)">
                 {record.rack
-                  ? [record.rack.warehouse?.code, record.rack.code]
+                  ? [
+                      record.rack.zone?.warehouse?.code,
+                      record.rack.zone?.code,
+                      record.rack.code,
+                    ]
                       .filter(Boolean)
                       .join(" / ")
                   : "—"}
               </Field>
               <Field label="Quantity">{record.quantity}</Field>
               <Field label="Purchase date">{record.purchaseDate ?? "—"}</Field>
-              <Field label="Next maintenance / calibration">
-                {record.nextMaintenanceDate ?? "—"}
-              </Field>
               <Field label="Description">{record.description ?? "—"}</Field>
               <Field label="Active">
                 <StatusBadge tone={record.isActive ? "success" : "neutral"} label={record.isActive ? "Active" : "Inactive"} />
@@ -114,20 +112,6 @@ export const ToolsShow = () => {
 
       {record && (
         <ToolStatusCard tool={{ id: record.id, status: record.status }} />
-      )}
-
-      {record && <ToolAssignmentCard tool={{ id: record.id }} />}
-
-      {record && <ToolUsageCard tool={{ id: record.id }} />}
-
-      {record && (
-        <ToolCycleCard
-          tool={{
-            id: record.id,
-            currentLifeCycle: record.currentLifeCycle,
-            maxLifeCycle: record.maxLifeCycle,
-          }}
-        />
       )}
 
       {record && <ToolReservationCalendarCard tool={{ id: record.id }} />}

@@ -91,19 +91,6 @@ export class Tool extends BaseEntity {
   @Column({ type: 'date', name: 'purchase_date', nullable: true })
   purchaseDate: string | null;
 
-  // Next maintenance / calibration due date (esp. measurement equipment).
-  @Column({ type: 'date', name: 'next_maintenance_date', nullable: true })
-  nextMaintenanceDate: string | null;
-
-  // Cycle counter: accumulated production cycles (auto-incremented at the end
-  // of each usage/production) vs. the tool's rated life. Reset after a regrind
-  // or maintenance.
-  @Column({ type: 'int', name: 'current_life_cycle', default: 0 })
-  currentLifeCycle: number;
-
-  @Column({ type: 'int', name: 'max_life_cycle', nullable: true })
-  maxLifeCycle: number | null;
-
   @Column({ type: 'boolean', name: 'is_active', default: true })
   isActive: boolean;
 }

@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { StatusBadge } from "@/components/refine-ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -17,20 +18,15 @@ import {
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { usePermissions } from "@/hooks/use-permissions";
 import { axiosInstance } from "@/providers/axios";
-import {
-  DaySlotStrip,
-  fmtWall,
-  SLOT_MS,
-  slotEndTime,
-  slotRuns,
-  slotToTime,
-} from "./day-slot-strip";
+import { fmtWall } from "./day-slot-strip";
 
 interface ToolReservation {
   id: string;
   toolId: string;
   note: string | null;
   status: "reserved" | "delivering" | "received" | "returning" | "returned";
+  /** False while the tool is in use / mid-handover elsewhere — hide Deliver. */
+  deliverable?: boolean;
   reservedFrom: string | null;
   reservedTo: string | null;
   receivedBy: string | null;
@@ -58,21 +54,21 @@ interface ToolCalendarRow {
 }
 
 /**
- * Tools reserved for this stage — SLOT-LEVEL reservation like the section
- * panel: pick one or more days, toggle individual half-hour boxes (same
- * hours apply to every picked day, e.g. 09:00–12:00 across three days) and
- * each contiguous run per day becomes its own reservation row. The same tool
- * may hold several disjoint ranges. Handover stays QR-driven per row.
+ * Tools reserved for this stage — ONE continuous span per reservation: pick a
+ * start/end day on the calendar plus a start and an end time; every hour in
+ * between (middle days fully) counts as reserved, and the tool's reservation
+ * calendar paints it the same way. The same tool may hold several disjoint
+ * spans. Handover stays QR-driven per row.
  */
 export function StageTools({
   stageId,
-  stageCompleted,
   windowStart,
   windowEnd,
   canManage = false,
 }: {
   stageId: string;
-  stageCompleted: boolean;
+  /** Unused since Return stopped waiting for completion; kept for callers. */
+  stageCompleted?: boolean;
   /** Reserve/re-date/remove tool reservations — process responsible or
    *  admin (backend also honors the reserve-tools key). */
   canManage?: boolean;
@@ -106,11 +102,12 @@ export function StageTools({
   const [toolId, setToolId] = useState("");
   // null = creating; a reservation id = re-dating that reservation.
   const [editId, setEditId] = useState<string | null>(null);
-  const [days, setDays] = useState<string[]>([]);
-  // Each picked day carries its OWN slot selection (different hours per day).
-  const [slotsByDay, setSlotsByDay] = useState<Record<string, Set<number>>>(
-    {},
-  );
+  // ONE continuous span: a date range + a start time and an end time. Every
+  // hour between `from startTime` and `to endTime` (middle days fully) counts
+  // as reserved.
+  const [range, setRange] = useState<{ from?: Date; to?: Date }>({});
+  const [startTime, setStartTime] = useState("00:00");
+  const [endTime, setEndTime] = useState("23:59");
   const [busySubmit, setBusySubmit] = useState(false);
   const refetch = () => query.refetch();
 
@@ -158,82 +155,42 @@ export function StageTools({
   const isAvailable = (day: Date) =>
     !reservedDays.some((d) => isSameDay(d, day));
 
-  const takenRanges = useMemo(
-    () =>
-      taken.map((r) => ({
-        from: r.reservedFrom
-          ? Date.parse(r.reservedFrom)
-          : r.stage?.estimatedStartDate
-            ? Date.parse(`${r.stage.estimatedStartDate}T00:00:00.000Z`)
-            : Number.NEGATIVE_INFINITY,
-        to: r.reservedTo
-          ? Date.parse(r.reservedTo)
-          : r.stage?.estimatedCompletedDate
-            ? Date.parse(`${r.stage.estimatedCompletedDate}T00:00:00.000Z`) +
-              24 * 60 * 60 * 1000
-            : Number.POSITIVE_INFINITY,
-      })),
-    [taken],
-  );
-  const busyAt = (dayIso: string) => (slot: number) => {
-    const s = Date.parse(`${dayIso}T00:00:00.000Z`) + slot * SLOT_MS;
-    return takenRanges.some((r) => r.from < s + SLOT_MS && r.to > s);
-  };
-  const toggleSlot = (day: string, slot: number) =>
-    setSlotsByDay((prev) => {
-      const next = new Set(prev[day] ?? []);
-      if (next.has(slot)) next.delete(slot);
-      else next.add(slot);
-      return { ...prev, [day]: next };
-    });
-
-  // Contiguous slot runs PER DAY → one reservation range per (day, run).
-  const runsByDay = useMemo(
-    () =>
-      days.map(
-        (d) => [d, slotRuns(slotsByDay[d] ?? new Set())] as const,
-      ),
-    [days, slotsByDay],
-  );
-  const rangeCount = runsByDay.reduce((n, [, r]) => n + r.length, 0);
-  // Re-dating replaces ONE row → exactly one day + one contiguous run.
-  const editShapeOk =
-    !editId ||
-    (days.length === 1 && (runsByDay[0]?.[1].length ?? 0) === 1);
+  const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+  const startDay = range.from ? format(range.from, "yyyy-MM-dd") : null;
+  const endDay = range.to
+    ? format(range.to, "yyyy-MM-dd")
+    : startDay;
+  const reservedFrom =
+    startDay && TIME_RE.test(startTime)
+      ? `${startDay}T${startTime}:00.000Z`
+      : null;
+  const reservedTo =
+    endDay && TIME_RE.test(endTime) ? `${endDay}T${endTime}:00.000Z` : null;
+  const rangeValid =
+    Boolean(reservedFrom && reservedTo) &&
+    Date.parse(reservedTo!) > Date.parse(reservedFrom!);
 
   const canSubmit =
-    Boolean(toolId && hasWindow) && rangeCount > 0 && editShapeOk && !busySubmit;
+    Boolean(toolId && hasWindow) && rangeValid && !busySubmit;
 
   const submit = async () => {
-    if (!canSubmit) return;
+    if (!canSubmit || !reservedFrom || !reservedTo) return;
     setBusySubmit(true);
     try {
       if (editId) {
-        const [from, toEx] = runsByDay[0][1][0];
         await axiosInstance.patch(
           `/process-stages/${stageId}/tool-reservations/${editId}`,
-          {
-            reservedFrom: `${days[0]}T${slotToTime(from)}:00.000Z`,
-            reservedTo: `${days[0]}T${slotEndTime(toEx - 1)}:00.000Z`,
-          },
+          { reservedFrom, reservedTo },
         );
       } else {
-        // One POST per (day, contiguous run).
-        for (const [day, runs] of runsByDay) {
-          for (const [from, toEx] of runs) {
-            await axiosInstance.post(
-              `/process-stages/${stageId}/tool-reservations`,
-              {
-                toolId,
-                reservedFrom: `${day}T${slotToTime(from)}:00.000Z`,
-                reservedTo: `${day}T${slotEndTime(toEx - 1)}:00.000Z`,
-              },
-            );
-          }
-        }
+        await axiosInstance.post(
+          `/process-stages/${stageId}/tool-reservations`,
+          { toolId, reservedFrom, reservedTo },
+        );
       }
-      setSlotsByDay({});
-      setDays([]);
+      setRange({});
+      setStartTime("00:00");
+      setEndTime("23:59");
       setEditId(null);
       await Promise.all([query.refetch(), toolResQuery.refetch()]);
     } catch (e) {
@@ -250,13 +207,12 @@ export function StageTools({
     setEditId(r.id);
     setToolId(r.toolId);
     if (r.reservedFrom && r.reservedTo) {
-      const day = r.reservedFrom.slice(0, 10);
-      setDays([day]);
-      const from = timeSlotOf(r.reservedFrom);
-      const to = timeSlotOfEnd(r.reservedTo);
-      const next = new Set<number>();
-      for (let i = from; i < to; i += 1) next.add(i);
-      setSlotsByDay({ [day]: next });
+      setRange({
+        from: parseISO(r.reservedFrom.slice(0, 10)),
+        to: parseISO(r.reservedTo.slice(0, 10)),
+      });
+      setStartTime(r.reservedFrom.slice(11, 16));
+      setEndTime(r.reservedTo.slice(11, 16));
     }
   };
 
@@ -284,11 +240,22 @@ export function StageTools({
   // The admin handover button for a reservation's current status (or null).
   const handoverButton = (r: ToolReservation) => {
     if (!isAdmin) return null;
-    if (r.status === "reserved")
+    if (r.status === "reserved") {
+      // No Deliver while the tool is in use / mid-handover on another
+      // reservation (same stage or elsewhere).
+      if (r.deliverable === false)
+        return (
+          <span className="text-xs text-muted-foreground">
+            Araç şu an müsait değil
+          </span>
+        );
       return <Button size="sm" onClick={() => void act(r.id, "deliver")}>Deliver</Button>;
+    }
     if (r.status === "delivering")
       return <Button size="sm" onClick={() => void act(r.id, "receive")}>Receive</Button>;
-    if (r.status === "received" && stageCompleted)
+    // Return is allowed any time after receive (not only once the stage is
+    // completed) — work with the tool may finish early.
+    if (r.status === "received")
       return <Button size="sm" onClick={() => void act(r.id, "return")}>Return</Button>;
     if (r.status === "returning")
       return (
@@ -344,9 +311,15 @@ export function StageTools({
                   <StatusBadge label={r.status} />
                   {handoverButton(r)}
                   {!isAdmin && actionable ? (
-                    <span className="text-xs text-muted-foreground">
-                      Scan QR to hand over
-                    </span>
+                    r.status === "reserved" && r.deliverable === false ? (
+                      <span className="text-xs text-muted-foreground">
+                        Araç şu an müsait değil
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">
+                        Scan QR to hand over
+                      </span>
+                    )
                   ) : null}
                   {canReserve && (
                     <>
@@ -391,8 +364,9 @@ export function StageTools({
                 onClick={() => {
                   setEditId(null);
                   setToolId("");
-                  setDays([]);
-                  setSlotsByDay({});
+                  setRange({});
+                  setStartTime("00:00");
+                  setEndTime("23:59");
                 }}
               >
                 Cancel edit
@@ -438,20 +412,11 @@ export function StageTools({
                 </span>
               </div>
               <Calendar
-                mode="multiple"
-                selected={days.map((d) => parseISO(d))}
-                onSelect={(sel) => {
-                  const next = (sel ?? [])
-                    .map((d) => format(d, "yyyy-MM-dd"))
-                    .sort();
-                  setDays(next);
-                  // Drop slot selections of unpicked days.
-                  setSlotsByDay((prev) =>
-                    Object.fromEntries(
-                      Object.entries(prev).filter(([d]) => next.includes(d)),
-                    ),
-                  );
-                }}
+                mode="range"
+                selected={{ from: range.from, to: range.to }}
+                onSelect={(sel) =>
+                  setRange({ from: sel?.from, to: sel?.to })
+                }
                 defaultMonth={parseISO(windowStart!)}
                 disabled={[
                   { before: parseISO(windowStart!) },
@@ -465,39 +430,36 @@ export function StageTools({
                 className="rounded-md border"
               />
               <p className="text-[10px] text-muted-foreground">
-                Takvimden bir veya birden fazla gün seçin; her günün saat
-                kutuları AYRI ayrı seçilir.
+                Takvimden başlangıç ve bitiş gününü seçin; aşağıya başlangıç
+                ve bitiş saatini girin. Araç bu aralıktaki TÜM saatlerde
+                rezerve sayılır.
               </p>
 
-              {days.length > 0 && (
-                <div className="space-y-3">
-                  {days.map((day) => (
-                    <DaySlotStrip
-                      key={day}
-                      label={`Saat kutuları · ${day}`}
-                      isBusy={busyAt(day)}
-                      selected={slotsByDay[day] ?? new Set()}
-                      onToggle={(slot) => toggleSlot(day, slot)}
-                    />
-                  ))}
-                  <p className="text-[10px] text-muted-foreground">
-                    Kutulara tek tek dokunarak seçin/bırakın — her gün için
-                    farklı saatler seçilebilir. Kırmızı kutular o gün dolu,
-                    alınamaz.
-                  </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1">
+                  <Label className="text-xs">Başlangıç saati</Label>
+                  <Input
+                    type="time"
+                    value={startTime}
+                    onChange={(e) => setStartTime(e.target.value)}
+                    className="h-8"
+                  />
                 </div>
-              )}
+                <div className="flex flex-col gap-1">
+                  <Label className="text-xs">Bitiş saati</Label>
+                  <Input
+                    type="time"
+                    value={endTime}
+                    onChange={(e) => setEndTime(e.target.value)}
+                    className="h-8"
+                  />
+                </div>
+              </div>
 
-              {!editShapeOk && (
-                <p className="text-xs text-destructive">
-                  Yeniden tarihleme tek gün ve tek bitişik saat aralığı ile
-                  yapılabilir.
-                </p>
-              )}
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs text-muted-foreground">
-                  {rangeCount > 0
-                    ? `${days.length} gün · toplam ${rangeCount} saat aralığı = ${rangeCount} rezervasyon`
+                  {rangeValid
+                    ? `${startDay} ${startTime} → ${endDay} ${endTime}`
                     : `Rezervasyon aşamanın tarih aralığında olmalı (${windowStart} → ${windowEnd}).`}
                 </span>
                 <Button size="sm" disabled={!canSubmit} onClick={() => void submit()}>
@@ -539,16 +501,3 @@ export function StageTools({
   );
 }
 
-/** "…T09:30:00.000Z" → its start slot index. */
-function timeSlotOf(iso: string): number {
-  const h = Number(iso.slice(11, 13));
-  const m = Number(iso.slice(14, 16));
-  return h * 2 + (m >= 30 ? 1 : 0);
-}
-/** End ISO → exclusive end slot (23:59 counts as end-of-day). */
-function timeSlotOfEnd(iso: string): number {
-  const h = Number(iso.slice(11, 13));
-  const m = Number(iso.slice(14, 16));
-  if (h === 23 && m >= 59) return 48;
-  return h * 2 + (m >= 30 ? 1 : 0);
-}

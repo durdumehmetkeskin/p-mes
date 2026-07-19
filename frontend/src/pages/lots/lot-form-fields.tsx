@@ -1,6 +1,6 @@
 import { useList } from "@refinedev/core";
 import type { Control, FieldErrors, UseFormRegister } from "react-hook-form";
-import { Controller } from "react-hook-form";
+import { Controller, useWatch } from "react-hook-form";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,7 +23,11 @@ interface MaterialOption {
 interface RackOption {
   id: string;
   code: string;
-  zone: { code: string; warehouse?: { code?: string } | null } | null;
+  zone: {
+    code: string;
+    projectId?: string | null;
+    warehouse?: { code?: string } | null;
+  } | null;
 }
 
 type FormValues = Record<string, unknown>;
@@ -45,7 +49,17 @@ export function LotFormFields({ register, control, errors }: Props) {
     pagination: { mode: "off" },
   });
   const materials = materialsResult?.data ?? [];
-  const racks = binsResult?.data ?? [];
+  const allRacks = binsResult?.data ?? [];
+
+  // A project lot may only sit on the project's racks (stock items inherit the
+  // lot's rack), so the rack options follow the chosen project.
+  const projectId = useWatch({ control, name: "projectId" }) as
+    | string
+    | null
+    | undefined;
+  const racks = projectId
+    ? allRacks.filter((r) => r.zone?.projectId === projectId)
+    : allRacks;
 
   return (
     <>
@@ -94,27 +108,46 @@ export function LotFormFields({ register, control, errors }: Props) {
           name="rackId"
           control={control}
           defaultValue={null}
-          render={({ field }) => (
-            <Select
-              value={field.value ? String(field.value) : NO_RACK}
-              onValueChange={(v) =>
-                field.onChange(v === NO_RACK ? null : v)
-              }
-            >
-              <SelectTrigger id="rackId">
-                <SelectValue placeholder="Select a rack" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NO_RACK}>— None —</SelectItem>
-                {racks.map((l) => (
-                  <SelectItem key={l.id} value={l.id}>
-                    {l.zone ? `${[l.zone.warehouse?.code, l.zone.code].filter(Boolean).join(" / ")} / ` : ""}
-                    {l.code}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
+          render={({ field }) => {
+            const stale =
+              Boolean(field.value) &&
+              !racks.some((r) => r.id === String(field.value));
+            return (
+              <>
+                <Select
+                  value={field.value ? String(field.value) : NO_RACK}
+                  onValueChange={(v) =>
+                    field.onChange(v === NO_RACK ? null : v)
+                  }
+                >
+                  <SelectTrigger id="rackId">
+                    <SelectValue placeholder="Select a rack" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NO_RACK}>— None —</SelectItem>
+                    {racks.map((l) => (
+                      <SelectItem key={l.id} value={l.id}>
+                        {l.zone ? `${[l.zone.warehouse?.code, l.zone.code].filter(Boolean).join(" / ")} / ` : ""}
+                        {l.code}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {projectId && racks.length === 0 && (
+                  <span className="text-xs text-warning">
+                    Bu projenin bölgesinde raf yok — önce projeye bir bölge/raf
+                    tanımlayın.
+                  </span>
+                )}
+                {stale && (
+                  <span className="text-xs text-warning">
+                    Seçili raf bu projenin bölgesinde değil — listeden yeni bir
+                    raf seçin.
+                  </span>
+                )}
+              </>
+            );
+          }}
         />
       </div>
 

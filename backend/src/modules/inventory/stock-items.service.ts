@@ -99,22 +99,42 @@ export class StockItemsService {
     dto: CreateStockItemDto,
     scope: WarehouseScope = 'ALL',
   ): Promise<StockItem> {
-    WarehouseScopeService.assertInScope(scope, dto.warehouseId);
-    // Validate references exist (404 on bad ids).
+    // Stock always lives on ITS LOT's rack: placement is derived from the lot,
+    // never chosen per item (warehouseId/rackId in the DTO are only accepted
+    // when they match).
     const lot = await this.lotsService.findOne(dto.lotId);
-    await this.warehousesService.findOne(dto.warehouseId);
-    const rack = dto.rackId
-      ? await this.racksService.findOne(dto.rackId)
-      : null;
-    // A project's stock may only be placed in that project's zones/racks.
-    assertProjectPlacement(lot, rack);
+    if (!lot.rackId || !lot.rack) {
+      throw new BadRequestException(
+        'Bu lota raf atanmamış; stok eklemeden önce lota raf atayın.',
+      );
+    }
+    if (dto.rackId != null && dto.rackId !== lot.rackId) {
+      throw new BadRequestException(
+        `Stok kalemi yalnızca lotun rafına (${lot.rack.code}) konabilir.`,
+      );
+    }
+    const warehouseId = lot.rack.zone.warehouseId;
+    if (dto.warehouseId != null && dto.warehouseId !== warehouseId) {
+      throw new BadRequestException(
+        'Stok kalemi yalnızca lotun rafının bulunduğu depoya konabilir.',
+      );
+    }
+    WarehouseScopeService.assertInScope(scope, warehouseId);
+    // The rack comes from the lot, so a project-placement failure here means
+    // the LOT itself is inconsistent (legacy data) — say that, not the generic
+    // placement error.
+    if (lot.projectId && lot.rack.zone?.projectId !== lot.projectId) {
+      throw new BadRequestException(
+        'Lotun rafı, lotun projesinin bölgesinde değil; lotu düzenleyip projeye ait bir raf seçin.',
+      );
+    }
 
     // Merge into the slot's single available pool if one already exists.
     const existing = await this.stockItems.findOne({
       where: {
         lotId: lot.id,
-        warehouseId: dto.warehouseId,
-        rackId: dto.rackId ?? IsNull(),
+        warehouseId,
+        rackId: lot.rackId,
         status: StockItemStatus.Available,
       },
       loadEagerRelations: false,
@@ -127,8 +147,8 @@ export class StockItemsService {
     } else {
       const item = this.stockItemsRepository.create({
         lotId: lot.id,
-        warehouseId: dto.warehouseId,
-        rackId: dto.rackId ?? null,
+        warehouseId,
+        rackId: lot.rackId,
         quantity: dto.quantity,
         status: StockItemStatus.Available,
         note: dto.note ?? null,
@@ -156,6 +176,29 @@ export class StockItemsService {
       throw new BadRequestException(
         'Only an available stock item can be edited',
       );
+    }
+    // Placement is pinned to the lot's rack (when the lot has one) — an edit
+    // may only restate it, never move the stock elsewhere. Quantity/note edits
+    // that don't touch placement stay valid even on pre-rule items. The item's
+    // lot arrives without its rack relation, so load it explicitly.
+    if (
+      item.lot.rackId &&
+      (dto.rackId !== undefined || dto.warehouseId !== undefined)
+    ) {
+      const lotRack = await this.racksService.findOne(item.lot.rackId);
+      if (dto.rackId !== undefined && dto.rackId !== item.lot.rackId) {
+        throw new BadRequestException(
+          `Stok kalemi yalnızca lotun rafına (${lotRack.code}) konabilir.`,
+        );
+      }
+      if (
+        dto.warehouseId !== undefined &&
+        dto.warehouseId !== lotRack.zone.warehouseId
+      ) {
+        throw new BadRequestException(
+          'Stok kalemi yalnızca lotun rafının bulunduğu depoya konabilir.',
+        );
+      }
     }
     const warehouseId = dto.warehouseId ?? item.warehouseId;
     const rackId = dto.rackId === undefined ? item.rackId : dto.rackId;

@@ -144,6 +144,24 @@ export default function StageDetailScreen() {
       });
       refetch();
       toast.success("Status updated");
+      // Completing with tools still on hand → remind about the QR return.
+      if (status === "completed") {
+        try {
+          const { data } = await axiosInstance.get<Array<{ status: string }>>(
+            `/process-stages/${stageId}/tool-reservations`,
+          );
+          const held = (Array.isArray(data) ? data : []).filter(
+            (r) => r.status === "received",
+          ).length;
+          if (held > 0) {
+            toast.warning(
+              `Kullanılan ${held} araç depoya iade edilmeli — QR ile iade edin.`,
+            );
+          }
+        } catch {
+          /* warning only */
+        }
+      }
     } catch {
       toast.error("Could not change status");
     }

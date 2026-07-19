@@ -18,8 +18,11 @@ export class CreateStockItemDto {
   @IsUUID()
   lotId: string;
 
+  // Placement is derived from the lot's rack; when given, these must MATCH it
+  // (legacy clients may keep sending them).
+  @IsOptional()
   @IsUUID()
-  warehouseId: string;
+  warehouseId?: string;
 
   @IsOptional()
   @IsUUID()

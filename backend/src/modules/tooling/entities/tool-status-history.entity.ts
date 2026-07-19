@@ -36,6 +36,12 @@ export class ToolStatusHistory extends BaseEntity {
   })
   toStatus: ToolStatus;
 
+  // Custody merged into the status trail: an in_use row records who/where the
+  // tool went (operator, stage, machine…); the next non-in_use row IS the
+  // return. Null on every other transition.
+  @Column({ type: 'varchar', length: 255, name: 'assigned_to', nullable: true })
+  assignedTo: string | null;
+
   @Column({ type: 'varchar', length: 500, nullable: true })
   note: string | null;
 

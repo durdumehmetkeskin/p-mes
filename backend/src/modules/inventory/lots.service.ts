@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -50,6 +51,7 @@ export class LotsService {
     lot.rack = rackId ? await this.racksService.findOne(rackId) : null;
     lot.customer = customerId ? ({ id: customerId } as Customer) : null;
     lot.project = projectId ? ({ id: projectId } as Project) : null;
+    this.assertRackMatchesProject(projectId ?? null, lot.rack);
     // Status is derived from expiry vs the material's thresholds, never client-set.
     lot.status = computeLotExpiryStatus(
       lot.expiryDate ?? null,
@@ -156,6 +158,10 @@ export class LotsService {
     } = dto;
     Object.assign(lot, rest);
 
+    const effProjectId =
+      dto.projectId !== undefined ? (dto.projectId ?? null) : lot.projectId;
+    this.assertRackMatchesProject(effProjectId, lot.rack);
+
     // Recompute derived status against the effective expiry + material.
     lot.status = computeLotExpiryStatus(
       lot.expiryDate ?? null,
@@ -177,6 +183,23 @@ export class LotsService {
       );
     }
     await this.lotsRepository.softRemove(lot);
+  }
+
+  /**
+   * A project lot's rack must live in one of the project's zones — stock items
+   * inherit the lot's rack, so an out-of-project rack would make every stock
+   * credit fail later.
+   */
+  private assertRackMatchesProject(
+    projectId: string | null,
+    rack: { zone?: { projectId?: string | null } | null } | null,
+  ): void {
+    if (!projectId || !rack) return;
+    if (rack.zone?.projectId !== projectId) {
+      throw new BadRequestException(
+        'Projeye ait lotun rafı, projenin bölgesindeki bir raf olmalı.',
+      );
+    }
   }
 
   private async assertLotNumberAvailable(

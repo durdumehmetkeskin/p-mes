@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import {
   NotificationsService,
   NotificationType,
@@ -13,7 +13,6 @@ import {
 import { Tool } from '../tooling/entities/tool.entity';
 import { ToolStatusHistory } from '../tooling/entities/tool-status-history.entity';
 import { ToolStatus } from '../tooling/enums/tool-status.enum';
-import { ToolsService } from '../tooling/tools.service';
 import {
   resolveWarehouseIds,
   WarehouseScope,
@@ -22,7 +21,6 @@ import type { User } from '../users/entities/user.entity';
 import { StageToolReservation } from './entities/stage-tool-reservation.entity';
 import { ProcessStage } from './entities/process-stage.entity';
 import { ToolReservationStatus } from './enums/tool-reservation-status.enum';
-import { ProcessStageStatus } from './enums/process-stage-status.enum';
 import { ProjectsService } from './projects.service';
 
 /**
@@ -43,28 +41,19 @@ export class ToolReservationsService {
     @InjectRepository(ToolStatusHistory)
     private readonly toolStatusHistory: Repository<ToolStatusHistory>,
     private readonly notifications: NotificationsService,
-    private readonly toolsService: ToolsService,
   ) {}
 
-  private actor(user?: User): { id: string; email: string } | undefined {
-    return user ? { id: user.id, email: user.email } : undefined;
-  }
-
-  /** Never let assignment/usage bookkeeping fail the handover itself. */
-  private async bestEffort(fn: () => Promise<unknown>): Promise<void> {
-    try {
-      await fn();
-    } catch {
-      /* non-fatal integration side effect */
-    }
-  }
-
-  /** Flip a tool's status + append the immutable status-history row. */
+  /**
+   * Flip a tool's status + append the immutable status-history row. Custody
+   * lives on that row: pass `assignedTo` when flipping to in_use (the next
+   * non-in_use row IS the return).
+   */
   private async setToolStatus(
     tool: Tool,
     to: ToolStatus,
     user: User | undefined,
     note: string,
+    assignedTo?: string,
   ): Promise<void> {
     const from = tool.status;
     await this.dataSource.transaction(async (manager) => {
@@ -75,6 +64,7 @@ export class ToolReservationsService {
           toolId: tool.id,
           fromStatus: from,
           toStatus: to,
+          assignedTo: assignedTo ?? null,
           note,
           changedById: user?.id ?? null,
           changedByEmail: user?.email ?? null,
@@ -118,25 +108,30 @@ export class ToolReservationsService {
         `Araç teslim edilemez — müsait değil: ${res.tool?.code ?? ''} (${res.tool?.status ?? '-'})`,
       );
     }
+    // The tool only flips to in_use when a worker RECEIVES it, so its status
+    // no longer interlocks concurrent delivers — block explicitly while any
+    // other reservation of this tool is mid-handover.
+    const inFlight = await this.reservations.count({
+      where: {
+        toolId: res.toolId,
+        status: In([
+          ToolReservationStatus.Delivering,
+          ToolReservationStatus.Received,
+          ToolReservationStatus.Returning,
+        ]),
+      },
+    });
+    if (inFlight > 0) {
+      throw new BadRequestException(
+        'Araç teslim edilemez — başka bir aşamanın teslim/iade sürecinde.',
+      );
+    }
     const stage = await this.loadStage(res.stageId);
-    await this.setToolStatus(
-      res.tool,
-      ToolStatus.InUse,
-      user,
-      `"${res.tool.name}" "${stage.name}" aşamasına teslim için verildi`,
-    );
     res.status = ToolReservationStatus.Delivering;
     res.deliveredByUserId = user.id;
     res.deliveredAt = new Date();
     await this.reservations.save(res);
 
-    await this.bestEffort(() =>
-      this.toolsService.assign(
-        res.toolId,
-        { assignedTo: `Aşama: ${stage.name}` },
-        this.actor(user),
-      ),
-    );
     for (const worker of stage.workers ?? []) {
       await this.notifications.notifyUser(
         worker.id,
@@ -154,13 +149,25 @@ export class ToolReservationsService {
     return this.listForTool(res.toolId);
   }
 
-  /** A stage worker takes delivery (gates the stage start). */
+  /**
+   * A stage worker takes delivery (gates the stage start). THIS is the moment
+   * the tool goes in_use and its assignment opens — not the crib's deliver.
+   */
   async receive(rid: string, user: User): Promise<unknown[]> {
     const res = await this.loadReservation(rid);
     const stage = await this.loadStage(res.stageId);
     this.assertStageWorker(stage, user);
     if (res.status !== ToolReservationStatus.Delivering) {
       throw new BadRequestException('Only a delivering tool can be received');
+    }
+    if (res.tool) {
+      await this.setToolStatus(
+        res.tool,
+        ToolStatus.InUse,
+        user,
+        `"${res.tool.name}" "${stage.name}" aşaması için teslim alındı`,
+        `Aşama: ${stage.name}`,
+      );
     }
     res.status = ToolReservationStatus.Received;
     res.receivedByUserId = user.id;
@@ -169,16 +176,17 @@ export class ToolReservationsService {
     return this.listForTool(res.toolId);
   }
 
-  /** A stage worker sends the tool back to the crib (after completion). */
+  /**
+   * A stage worker sends the tool back to the crib. Allowed any time after
+   * receive (work with the tool may finish before the stage does); completing
+   * the stage reminds workers about any still-unreturned tools.
+   */
   async returnTool(rid: string, user: User): Promise<unknown[]> {
     const res = await this.loadReservation(rid);
     const stage = await this.loadStage(res.stageId);
     this.assertStageWorker(stage, user);
     if (res.status !== ToolReservationStatus.Received) {
       throw new BadRequestException('Only a received tool can be returned');
-    }
-    if (stage.status !== ProcessStageStatus.Completed) {
-      throw new BadRequestException('Aşama tamamlanmadan araç iade edilemez');
     }
     res.status = ToolReservationStatus.Returning;
     res.returnedByUserId = user.id;
@@ -216,17 +224,14 @@ export class ToolReservationsService {
     }
     res.status = ToolReservationStatus.Returned;
     await this.reservations.save(res);
-    await this.bestEffort(() =>
-      this.toolsService.return(
-        res.toolId,
-        { note: 'Aşama iadesi' },
-        this.actor(user),
-      ),
-    );
     return this.listForTool(res.toolId);
   }
 
-  /** Free a tool held by a reservation that is being removed (planning undo). */
+  /**
+   * Free a tool held by a reservation that is being removed (planning undo).
+   * A `delivering` row leaves the tool still `available` (in_use starts at
+   * receive), so the InUse check correctly skips it — nothing to undo.
+   */
   async releaseReservation(
     res: StageToolReservation,
     user?: User,
@@ -243,23 +248,23 @@ export class ToolReservationsService {
         user,
         'Araç rezervasyonu kaldırıldı',
       );
-      await this.bestEffort(() =>
-        this.toolsService.return(
-          res.toolId,
-          { note: 'Rezervasyon kaldırıldı' },
-          this.actor(user),
-        ),
-      );
     }
   }
 
   // --- stage-start guard + usage hooks (called by ProcessStagesService) ---
 
-  /** Throws unless every tool reserved for the stage has been received. */
+  /**
+   * Throws unless every tool reserved for the stage has been received. A tool
+   * already returned (or on its way back) doesn't block — its work with the
+   * stage finished early.
+   */
   async assertAllReceived(stageId: string): Promise<void> {
     const rows = await this.reservations.find({ where: { stageId } });
     const notReceived = rows.filter(
-      (r) => r.status !== ToolReservationStatus.Received,
+      (r) =>
+        r.status !== ToolReservationStatus.Received &&
+        r.status !== ToolReservationStatus.Returning &&
+        r.status !== ToolReservationStatus.Returned,
     );
     if (notReceived.length > 0) {
       throw new BadRequestException(
@@ -267,32 +272,6 @@ export class ToolReservationsService {
           .map((r) => r.tool?.code ?? r.toolId)
           .join(', ')}`,
       );
-    }
-  }
-
-  /** Stage started → begin a usage session for each received tool. */
-  async onStageStart(stageId: string, user?: User): Promise<void> {
-    const rows = await this.reservations.find({
-      where: { stageId, status: ToolReservationStatus.Received },
-    });
-    if (rows.length === 0) return;
-    const stage = await this.loadStage(stageId);
-    for (const r of rows) {
-      await this.bestEffort(() =>
-        this.toolsService.startUsage(
-          r.toolId,
-          { usedFor: `Aşama: ${stage.name}` },
-          this.actor(user),
-        ),
-      );
-    }
-  }
-
-  /** Stage completed/reset → end any usage session on the stage's tools. */
-  async onStageEnd(stageId: string): Promise<void> {
-    const rows = await this.reservations.find({ where: { stageId } });
-    for (const r of rows) {
-      await this.bestEffort(() => this.toolsService.endUsage(r.toolId, {}));
     }
   }
 
@@ -313,12 +292,37 @@ export class ToolReservationsService {
       .orderBy('r.createdAt', 'ASC');
   }
 
-  private mapRow(r: StageToolReservation): unknown {
+  /**
+   * The tools that are mid-handover on ANY reservation (delivering / received
+   * / returning) — a second reservation of such a tool cannot be delivered
+   * yet, so the UI hides its Deliver button (mirrors the deliver() guard).
+   */
+  private async busyToolIds(toolIds: string[]): Promise<Set<string>> {
+    if (toolIds.length === 0) return new Set();
+    const rows = await this.reservations.find({
+      where: {
+        toolId: In(toolIds),
+        status: In([
+          ToolReservationStatus.Delivering,
+          ToolReservationStatus.Received,
+          ToolReservationStatus.Returning,
+        ]),
+      },
+      loadEagerRelations: false,
+    });
+    return new Set(rows.map((r) => r.toolId));
+  }
+
+  private mapRow(r: StageToolReservation, busyTools: Set<string>): unknown {
     const order = r.stage?.process?.orderItem?.order ?? null;
     const warehouse = r.tool?.rack?.zone?.warehouse ?? null;
     return {
       id: r.id,
       status: r.status,
+      deliverable:
+        r.status === ToolReservationStatus.Reserved &&
+        r.tool?.status === ToolStatus.Available &&
+        !busyTools.has(r.toolId),
       reservedFrom: r.reservedFrom,
       reservedTo: r.reservedTo,
       deliveredAt: r.deliveredAt,
@@ -354,7 +358,8 @@ export class ToolReservationsService {
     const rows = await this.baseQuery()
       .where('r.toolId = :toolId', { toolId })
       .getMany();
-    return rows.map((r) => this.mapRow(r));
+    const busy = await this.busyToolIds([toolId]);
+    return rows.map((r) => this.mapRow(r, busy));
   }
 
   /**
@@ -376,6 +381,9 @@ export class ToolReservationsService {
       qb.andWhere('z.warehouseId IN (:...warehouseIds)', { warehouseIds });
     }
     const rows = await qb.getMany();
-    return rows.map((r) => this.mapRow(r));
+    const busy = await this.busyToolIds([
+      ...new Set(rows.map((r) => r.toolId)),
+    ]);
+    return rows.map((r) => this.mapRow(r, busy));
   }
 }

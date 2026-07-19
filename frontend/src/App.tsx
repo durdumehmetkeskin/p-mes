@@ -407,21 +407,6 @@ function App() {
                 name: "tool-status-history",
                 meta: { label: "Tool Status History" },
               },
-              // Tool assignments are managed from the tool detail screen.
-              {
-                name: "tool-assignments",
-                meta: { label: "Tool Assignment" },
-              },
-              // Tool usage sessions are read from the tool detail screen.
-              {
-                name: "tool-usages",
-                meta: { label: "Tool Usage" },
-              },
-              // Tool cycle-counter log is read from the tool detail screen.
-              {
-                name: "tool-cycle-logs",
-                meta: { label: "Tool Cycle Log" },
-              },
 
               // ---- Projects (project workflow management) ----
               {

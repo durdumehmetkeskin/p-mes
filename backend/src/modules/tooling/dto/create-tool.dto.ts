@@ -78,18 +78,6 @@ export class CreateToolDto {
   purchaseDate?: string;
 
   @IsOptional()
-  @IsDateString()
-  nextMaintenanceDate?: string;
-
-  // Rated cycle life. The cumulative counter (currentLifeCycle) is managed by
-  // the cycle endpoints, not set here.
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  maxLifeCycle?: number;
-
-  @IsOptional()
   @IsBoolean()
   isActive?: boolean;
 }

@@ -1,4 +1,4 @@
-import type { ResourceProps } from "@refinedev/core";
+﻿import type { ResourceProps } from "@refinedev/core";
 
 /**
  * Refine resource registry (ported from the web App.tsx). Icons are NOT here —
@@ -88,9 +88,6 @@ export const resources: ResourceProps[] = [
   },
   { name: "tool-types", meta: { label: "Tool Type" } },
   { name: "tool-status-history", meta: { label: "Tool Status History" } },
-  { name: "tool-assignments", meta: { label: "Tool Assignment" } },
-  { name: "tool-usages", meta: { label: "Tool Usage" } },
-  { name: "tool-cycle-logs", meta: { label: "Tool Cycle Log" } },
 
   // ---- Projects ----
   { name: "project-mgmt", meta: { label: "Projects" } },

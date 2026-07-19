@@ -11,10 +11,7 @@ function clean(values: FormValues): FormValues {
   const p = { ...values };
   if (typeof p.quantity === "number" && Number.isNaN(p.quantity))
     delete p.quantity;
-  if (typeof p.maxLifeCycle === "number" && Number.isNaN(p.maxLifeCycle))
-    delete p.maxLifeCycle;
   if (!p.purchaseDate) delete p.purchaseDate;
-  if (!p.nextMaintenanceDate) delete p.nextMaintenanceDate;
   return p;
 }
 

@@ -1,4 +1,11 @@
-import { useApiUrl, useCustomMutation, useGetIdentity } from "@refinedev/core";
+import {
+  useApiUrl,
+  useCustomMutation,
+  useGetIdentity,
+  useNotification,
+} from "@refinedev/core";
+
+import { axiosInstance } from "@/providers/axios";
 import { Pencil } from "lucide-react";
 import { useState } from "react";
 
@@ -86,6 +93,7 @@ export function StageDetailDialog({
 }) {
   const apiUrl = useApiUrl();
   const { mutate } = useCustomMutation();
+  const { open: notify } = useNotification();
   const [busy, setBusy] = useState(false);
   // Completing REQUIRES a manually entered duration (backend rejects
   // otherwise) — the Completed buttons open this inline prompt first.
@@ -152,6 +160,25 @@ export function StageDetailDialog({
         onSuccess: () => {
           onChanged();
           setBusy(false);
+          // Completing with tools still on hand → remind about the QR return.
+          if (next === "completed") {
+            void axiosInstance
+              .get<Array<{ status: string }>>(
+                `/process-stages/${stage.id}/tool-reservations`,
+              )
+              .then(({ data }) => {
+                const held = (Array.isArray(data) ? data : []).filter(
+                  (r) => r.status === "received",
+                ).length;
+                if (held > 0) {
+                  notify?.({
+                    type: "error",
+                    message: `Aşama tamamlandı — kullanılan ${held} araç depoya iade edilmeli (QR ile iade edin).`,
+                  });
+                }
+              })
+              .catch(() => undefined);
+          }
           // Completing a stage offers to record what it produced (optional,
           // dismissable — the panel below remains as the recovery path).
           if (next === "completed" && has("products:create")) {

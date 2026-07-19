@@ -6,12 +6,10 @@ export const TOOL_CATEGORIES = [
   { value: "measurement_equipment", label: "Measurement Equipment (Ölçüm Ekipmanı)" },
 ] as const;
 
+// Material-style two-state lifecycle (mirrors backend ToolStatus).
 export const TOOL_STATUSES = [
   { value: "available", label: "Available" },
   { value: "in_use", label: "In use" },
-  { value: "maintenance", label: "Maintenance" },
-  { value: "calibration", label: "Calibration" },
-  { value: "retired", label: "Retired" },
 ] as const;
 
 export const toolCategoryLabel = (v?: string) =>

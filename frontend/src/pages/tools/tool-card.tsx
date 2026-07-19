@@ -18,22 +18,18 @@ export interface ToolRecord {
   category: string;
   status: string;
   toolType: { id: string; name: string } | null;
-  rack: { code: string; warehouse?: { code?: string } | null } | null;
+  rack: {
+    code: string;
+    zone?: { code?: string; warehouse?: { code?: string } | null } | null;
+  } | null;
   quantity: number;
   isActive: boolean;
-  currentLifeCycle?: number;
-  maxLifeCycle?: number | null;
-  nextMaintenanceDate?: string | null;
 }
 
-// Tool status → health tone + left accent (green = healthy, amber = due,
-// red = retired/critical).
+// Tool status → tone + left accent (green = on the rack, blue = checked out).
 const HEALTH: Record<string, { tone: StatusTone; accent: string }> = {
   available: { tone: "success", accent: "border-l-success" },
   in_use: { tone: "info", accent: "border-l-info" },
-  maintenance: { tone: "warning", accent: "border-l-warning" },
-  calibration: { tone: "warning", accent: "border-l-warning" },
-  retired: { tone: "error", accent: "border-l-destructive" },
 };
 
 /** Map a tool status to its health tone (available = healthy, etc.). */
@@ -70,18 +66,9 @@ export function ToolCard({ tool }: { tool: ToolRecord }) {
         </div>
         <div className="flex flex-col">
           <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-            Cycle Count
+            Quantity
           </span>
-          <span className="font-mono">
-            {tool.currentLifeCycle ?? 0}
-            {tool.maxLifeCycle != null ? ` / ${tool.maxLifeCycle}` : ""}
-          </span>
-        </div>
-        <div className="flex flex-col">
-          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-            Next Maint.
-          </span>
-          <span className="font-mono">{tool.nextMaintenanceDate ?? "—"}</span>
+          <span className="font-mono">{tool.quantity}</span>
         </div>
         <div className="flex flex-col">
           <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -89,7 +76,13 @@ export function ToolCard({ tool }: { tool: ToolRecord }) {
           </span>
           <span className="truncate font-mono text-muted-foreground">
             {tool.rack
-              ? [tool.rack.warehouse?.code, tool.rack.code].filter(Boolean).join(" / ")
+              ? [
+                  tool.rack.zone?.warehouse?.code,
+                  tool.rack.zone?.code,
+                  tool.rack.code,
+                ]
+                  .filter(Boolean)
+                  .join(" / ")
               : "—"}
           </span>
         </div>

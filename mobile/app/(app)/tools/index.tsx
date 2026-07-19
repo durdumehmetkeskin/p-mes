@@ -34,11 +34,8 @@ function ToolsHeader({
   const inUse = useCount("tools", [
     { field: "status", operator: "eq", value: "in_use" },
   ]);
-  const maint = useCount("tools", [
-    { field: "status", operator: "eq", value: "maintenance" },
-  ]);
-  const retired = useCount("tools", [
-    { field: "status", operator: "eq", value: "retired" },
+  const available = useCount("tools", [
+    { field: "status", operator: "eq", value: "available" },
   ]);
 
   const chips: { label: string; value: string | null }[] = [
@@ -53,13 +50,10 @@ function ToolsHeader({
           <KpiCard label="Total" value={total ?? "—"} tone="primary" mono />
         </View>
         <View className="w-[48%]">
+          <KpiCard label="Available" value={available ?? "—"} tone="primary" mono />
+        </View>
+        <View className="w-[48%]">
           <KpiCard label="In use" value={inUse ?? "—"} tone="info" mono />
-        </View>
-        <View className="w-[48%]">
-          <KpiCard label="Maintenance" value={maint ?? "—"} tone="warning" mono />
-        </View>
-        <View className="w-[48%]">
-          <KpiCard label="Retired" value={retired ?? "—"} tone="danger" mono />
         </View>
       </View>
 
@@ -134,11 +128,7 @@ export default function ToolsListScreen() {
               {toolCategoryLabel(t.category).split(" (")[0]}
             </Text>
             <Text className="font-mono text-xs text-muted-foreground">
-              {t.maxLifeCycle
-                ? `${t.currentLifeCycle ?? 0} / ${t.maxLifeCycle} cyc`
-                : t.rack
-                  ? labelRack(t.rack)
-                  : ""}
+              {t.rack ? labelRack(t.rack) : ""}
             </Text>
           </View>
         </Pressable>

@@ -25,6 +25,10 @@ interface Lot extends BaseRecord {
   material?: { code?: string; name?: string } | null;
   customer?: { name?: string } | null;
   project?: { code?: string; name?: string } | null;
+  rack?: {
+    code?: string;
+    zone?: { code?: string; warehouse?: { code?: string } | null } | null;
+  } | null;
 }
 interface StockItem extends BaseRecord {
   id: string;
@@ -123,6 +127,20 @@ export default function LotDetailScreen() {
             <FieldRow
               label="Project"
               value={lot?.project ? [lot.project.code, lot.project.name].filter(Boolean).join(" · ") : undefined}
+            />
+            <FieldRow
+              label="Rack"
+              value={
+                lot?.rack
+                  ? [
+                      lot.rack.zone?.warehouse?.code,
+                      lot.rack.zone?.code,
+                      lot.rack.code,
+                    ]
+                      .filter(Boolean)
+                      .join(" / ")
+                  : undefined
+              }
             />
           </View>
 

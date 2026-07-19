@@ -25,6 +25,8 @@ interface Tool extends BaseRecord {
 interface ToolReservation {
   id: string;
   status: "reserved" | "delivering" | "received" | "returning" | "returned";
+  /** False while the tool is in use / mid-handover elsewhere — hide Deliver. */
+  deliverable?: boolean;
   stage: { id: string; name: string; status: string } | null;
   order: { orderNumber: string } | null;
 }
@@ -114,8 +116,6 @@ export default function ToolHandoverScreen() {
           ) : (
             actionable.map((r) => {
               const meta = VERB[r.status]!;
-              const canReturn =
-                r.status !== "received" || r.stage?.status === "completed";
               return (
                 <View
                   key={r.id}
@@ -128,9 +128,12 @@ export default function ToolHandoverScreen() {
                     </Text>
                     <StatusBadge label={r.status} />
                   </View>
-                  {r.status === "received" && !canReturn ? (
+                  {r.status === "reserved" && r.deliverable === false ? (
+                    // The tool is in use / mid-handover on another reservation
+                    // (same stage or elsewhere) — no Deliver until it's back.
                     <Text className="text-xs text-muted-foreground">
-                      Complete the stage before returning the tool.
+                      Araç şu an müsait değil — önce mevcut teslim/iade
+                      tamamlanmalı.
                     </Text>
                   ) : (
                     <Button

@@ -12,6 +12,7 @@ import { InventoryTransaction } from '../inventory/entities/inventory-transactio
 import { StockItemStatus } from '../inventory/enums/stock-item-status.enum';
 import { InventoryTransactionType } from '../inventory/enums/inventory-transaction-type.enum';
 import { Tool } from '../tooling/entities/tool.entity';
+import { ToolStatus } from '../tooling/enums/tool-status.enum';
 import { StageToolReservation } from './entities/stage-tool-reservation.entity';
 import { ToolReservationStatus } from './enums/tool-reservation-status.enum';
 import { ToolReservationsService } from './tool-reservations.service';
@@ -246,6 +247,27 @@ export class ProcessStagesService {
       },
       order: { createdAt: 'ASC' },
     });
+    // A reserved row is deliverable only while its tool is free: available on
+    // the rack AND not mid-handover on ANY of its reservations (this stage or
+    // another) — mirrors the deliver() guards so the UI can hide the button.
+    const toolIds = [...new Set(rows.map((r) => r.toolId))];
+    const busyTools = new Set<string>(
+      toolIds.length
+        ? (
+            await this.toolReservations.find({
+              where: {
+                toolId: In(toolIds),
+                status: In([
+                  ToolReservationStatus.Delivering,
+                  ToolReservationStatus.Received,
+                  ToolReservationStatus.Returning,
+                ]),
+              },
+              loadEagerRelations: false,
+            })
+          ).map((x) => x.toolId)
+        : [],
+    );
     return rows.map((r) => ({
       id: r.id,
       toolId: r.toolId,
@@ -254,6 +276,10 @@ export class ProcessStagesService {
       reservedFrom: r.reservedFrom,
       reservedTo: r.reservedTo,
       received: r.status === ToolReservationStatus.Received,
+      deliverable:
+        r.status === ToolReservationStatus.Reserved &&
+        r.tool?.status === ToolStatus.Available &&
+        !busyTools.has(r.toolId),
       deliveredAt: r.deliveredAt,
       deliveredBy: r.deliveredByUser?.name ?? null,
       receivedAt: r.receivedAt,
@@ -986,12 +1012,28 @@ export class ProcessStagesService {
     }
     const saved = await this.stages.save(stage);
 
-    // Tool usage sessions track the stage's runtime: start on begin, end on
-    // complete/reset. (Tool status is driven by the explicit QR handover.)
-    if (status === ProcessStageStatus.InProgress) {
-      await this.toolReservationsService.onStageStart(id, user);
-    } else {
-      await this.toolReservationsService.onStageEnd(id);
+    // Completing with tools still on hand → remind every worker to QR-return
+    // them to the crib (a warning, not a block).
+    if (status === ProcessStageStatus.Completed) {
+      const unreturned = await this.toolReservations.count({
+        where: { stageId: id, status: ToolReservationStatus.Received },
+      });
+      if (unreturned > 0) {
+        for (const worker of stage.workers ?? []) {
+          await this.notifications.notifyUser(
+            worker.id,
+            {
+              type: NotificationType.ToolReturning,
+              title: 'Araç iadesi gerekli',
+              message: `"${stage.name}" aşaması tamamlandı — kullanılan ${unreturned} aracı QR okutarak depoya iade edin`,
+              link: `/tools`,
+              entityType: 'process-stage',
+              entityId: id,
+            },
+            user?.id,
+          );
+        }
+      }
     }
 
     await this.recomputeOverall(stage.processId);

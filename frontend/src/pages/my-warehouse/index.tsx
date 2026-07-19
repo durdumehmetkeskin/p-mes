@@ -73,6 +73,8 @@ interface StockItem {
 interface ToolReservation {
   id: string;
   status: string;
+  /** False while the tool is in use / mid-handover elsewhere — hide Deliver. */
+  deliverable?: boolean;
   tool: { id: string; code: string; name: string } | null;
   stage: { name: string; status: string } | null;
   order: { orderNumber: string } | null;
@@ -318,7 +320,11 @@ export const MyWarehouse = () => {
                     main={`${r.tool?.code ?? "—"} · ${r.tool?.name ?? ""}`}
                     sub={forLabel(r.order, r.stage)}
                     action={
-                      isAdmin ? (
+                      r.deliverable === false ? (
+                        <span className="text-xs text-muted-foreground">
+                          Araç şu an müsait değil
+                        </span>
+                      ) : isAdmin ? (
                         <Button size="sm" onClick={() => void act(`/tool-reservations/${r.id}/deliver`, "Delivered")}>
                           Deliver
                         </Button>

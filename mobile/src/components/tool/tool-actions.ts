@@ -1,15 +1,9 @@
-import type { AxiosError } from "axios";
+﻿import type { AxiosError } from "axios";
 import { useInvalidate } from "@refinedev/core";
 import { useRouter } from "expo-router";
 import { toast } from "sonner-native";
 
-export const TOOL_INVALIDATE = [
-  "tools",
-  "tool-status-history",
-  "tool-assignments",
-  "tool-usages",
-  "tool-cycle-logs",
-];
+export const TOOL_INVALIDATE = ["tools", "tool-status-history"];
 
 export function toolErr(e: unknown): string {
   const m = (e as AxiosError<{ message?: string | string[] }>)?.response?.data

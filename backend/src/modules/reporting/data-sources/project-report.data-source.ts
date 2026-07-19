@@ -14,8 +14,8 @@ import { Process } from '../../project/entities/process.entity';
 import { Project } from '../../project/entities/project.entity';
 import { ProjectMaterialReorder } from '../../project/entities/project-material-reorder.entity';
 import { ToolCategory } from '../../tooling/enums/tool-category.enum';
-import { ToolAssignmentStatus } from '../../tooling/enums/tool-assignment-status.enum';
-import { ToolAssignment } from '../../tooling/entities/tool-assignment.entity';
+import { ToolStatus } from '../../tooling/enums/tool-status.enum';
+import { ToolStatusHistory } from '../../tooling/entities/tool-status-history.entity';
 import { Tool } from '../../tooling/entities/tool.entity';
 import { ReportDataSource } from '../enums/report-data-source.enum';
 import { COLOR, STAGE_STATUS_SEGMENTS } from '../report-theme';
@@ -82,8 +82,8 @@ export class ProjectReportDataSource implements ReportDataSourceProvider {
     @InjectRepository(StockItem)
     private readonly stockItems: Repository<StockItem>,
     @InjectRepository(Tool) private readonly tools: Repository<Tool>,
-    @InjectRepository(ToolAssignment)
-    private readonly toolAssignments: Repository<ToolAssignment>,
+    @InjectRepository(ToolStatusHistory)
+    private readonly toolStatusHistory: Repository<ToolStatusHistory>,
   ) {}
 
   async run(params: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -561,16 +561,21 @@ export class ProjectReportDataSource implements ReportDataSourceProvider {
         scope: 'all',
       };
     }
-    const active = await this.toolAssignments.find({
-      where: {
-        toolId: In(molds.map((m) => m.id)),
-        status: ToolAssignmentStatus.Active,
-      },
-      order: { createdAt: 'DESC' },
-    });
-    const assignmentByTool = new Map<string, ToolAssignment>();
-    for (const a of active)
-      if (!assignmentByTool.has(a.toolId)) assignmentByTool.set(a.toolId, a);
+    // Custody lives on the status trail: a mold is "in the field" while its
+    // status is in_use; who holds it = its latest in_use history row.
+    const inUseIds = molds
+      .filter((m) => m.status === ToolStatus.InUse)
+      .map((m) => m.id);
+    const assignedToByTool = new Map<string, string | null>();
+    if (inUseIds.length > 0) {
+      const trail = await this.toolStatusHistory.find({
+        where: { toolId: In(inUseIds), toStatus: ToolStatus.InUse },
+        order: { createdAt: 'DESC' },
+      });
+      for (const h of trail)
+        if (!assignedToByTool.has(h.toolId))
+          assignedToByTool.set(h.toolId, h.assignedTo);
+    }
 
     const tokens = [projectCode, ...orderNumbers].map(norm).filter(Boolean);
     const matchesProject = (text: string | null | undefined): boolean => {
@@ -579,23 +584,25 @@ export class ProjectReportDataSource implements ReportDataSourceProvider {
     };
 
     const build = (tool: Tool) => {
-      const a = assignmentByTool.get(tool.id);
-      const inField = !!a;
+      const inField = tool.status === ToolStatus.InUse;
+      const assignedTo = inField
+        ? (assignedToByTool.get(tool.id) ?? null)
+        : null;
       return {
         code: tool.code,
         name: tool.name,
         status: tool.status,
         serialNumber: tool.serialNumber,
         inField,
-        assignedTo: a?.assignedTo ?? null,
+        assignedTo,
         location: inField
-          ? `Saha · ${a?.assignedTo ?? '—'}`
+          ? `Saha · ${assignedTo ?? '—'}`
           : tool.rack?.code
             ? `Depo · Raf ${tool.rack.code}`
             : 'Depo',
         pillLabel: inField ? 'Sahada' : 'Depoda',
         pillColor: inField ? COLOR.inProgress : COLOR.ok,
-        projectLinked: inField && matchesProject(a?.assignedTo),
+        projectLinked: inField && matchesProject(assignedTo),
       };
     };
 

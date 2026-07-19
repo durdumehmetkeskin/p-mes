@@ -66,26 +66,14 @@ export class InventoryToolingDataSource implements ReportDataSourceProvider {
     });
 
     const tools = await this.tools.find({ order: { code: 'ASC' } });
-    let nearEolCount = 0;
-    const toolViews = tools.map((t) => {
-      const max = t.maxLifeCycle ?? 0;
-      const lifeUsedPct = max > 0 ? (t.currentLifeCycle / max) * 100 : null;
-      const nearEol = lifeUsedPct !== null && lifeUsedPct >= 80;
-      if (nearEol) nearEolCount += 1;
-      return {
-        code: t.code,
-        name: t.name,
-        category: t.category,
-        status: t.status,
-        type: t.toolType?.name ?? null,
-        quantity: t.quantity,
-        currentLifeCycle: t.currentLifeCycle,
-        maxLifeCycle: t.maxLifeCycle,
-        lifeUsedPct,
-        nearEol,
-        nextMaintenanceDate: t.nextMaintenanceDate,
-      };
-    });
+    const toolViews = tools.map((t) => ({
+      code: t.code,
+      name: t.name,
+      category: t.category,
+      status: t.status,
+      type: t.toolType?.name ?? null,
+      quantity: t.quantity,
+    }));
 
     // Tool status distribution (donut).
     const statusCounts = new Map<string, number>();
@@ -98,12 +86,6 @@ export class InventoryToolingDataSource implements ReportDataSourceProvider {
       color: paletteColor(i),
     }));
 
-    // Top tools by life used % (bar chart).
-    const toolLife = toolViews
-      .filter((t) => t.lifeUsedPct !== null)
-      .sort((a, b) => (b.lifeUsedPct ?? 0) - (a.lifeUsedPct ?? 0))
-      .slice(0, 10)
-      .map((t) => ({ label: t.code, value: t.lifeUsedPct ?? 0 }));
 
     return {
       generatedAt: new Date().toISOString(),
@@ -115,7 +97,6 @@ export class InventoryToolingDataSource implements ReportDataSourceProvider {
         materialBalances: stock.length,
         lowStockCount,
         toolCount: tools.length,
-        nearEolCount,
       },
       charts: {
         stockHealth: [
@@ -127,7 +108,6 @@ export class InventoryToolingDataSource implements ReportDataSourceProvider {
           { label: 'Düşük Stok', value: lowStockCount, color: COLOR.low },
         ],
         toolStatus,
-        toolLife,
       },
       stock,
       tools: toolViews,

@@ -14,11 +14,6 @@ export default function ToolsLayout() {
       <Stack.Screen name="create" options={modal} />
       <Stack.Screen name="[id]/edit" options={modal} />
       <Stack.Screen name="[id]/status" options={modal} />
-      <Stack.Screen name="[id]/assign" options={modal} />
-      <Stack.Screen name="[id]/return" options={modal} />
-      <Stack.Screen name="[id]/usage-start" options={modal} />
-      <Stack.Screen name="[id]/usage-end" options={modal} />
-      <Stack.Screen name="[id]/cycles" options={modal} />
     </Stack>
   );
 }

@@ -88,8 +88,8 @@ const AdminDashboard = () => {
 
   const materials = useTotal("materials");
   const openOrders = useTotal("orders");
-  const toolsInMaintenance = useTotal("tools", {
-    filters: [{ field: "status", operator: "eq", value: "maintenance" }],
+  const toolsInUse = useTotal("tools", {
+    filters: [{ field: "status", operator: "eq", value: "in_use" }],
   });
   // Reservations were folded into the single stock-item table: a reservation is
   // now a stock item split off into the "reserved" status (see stock-items).
@@ -147,12 +147,12 @@ const AdminDashboard = () => {
           to="/projects"
         />
         <KpiCard
-          label="Tools In Maintenance"
-          value={toolsInMaintenance}
+          label="Tools In Use"
+          value={toolsInUse}
           icon={Wrench}
-          tone="warning"
-          valueTone={toolsInMaintenance > 0 ? "warning" : "neutral"}
-          hint="Scheduled / overdue"
+          tone="info"
+          valueTone={toolsInUse > 0 ? "info" : "neutral"}
+          hint="Checked out to stages"
           to="/tools"
         />
         <KpiCard

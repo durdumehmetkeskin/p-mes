@@ -56,6 +56,8 @@ interface StockItem extends BaseRecord {
 interface ToolReservation {
   id: string;
   status: string;
+  /** False while the tool is in use / mid-handover elsewhere — hide Deliver. */
+  deliverable?: boolean;
   tool?: { id: string; code?: string; name?: string } | null;
   stage?: { name?: string } | null;
   order?: { orderNumber?: string } | null;
@@ -302,9 +304,15 @@ export default function MyWarehouseScreen() {
                     r.id,
                     `${r.tool?.code ?? "—"} · ${r.tool?.name ?? ""}`,
                     forLabel(r.order, r.stage),
-                    isAdmin
-                      ? primaryBtn("Deliver", () => void post(`/tool-reservations/${r.id}/deliver`, "Delivered"))
-                      : scanHint,
+                    r.deliverable === false ? (
+                      <Text className="text-xs text-muted-foreground">
+                        Araç müsait değil
+                      </Text>
+                    ) : isAdmin ? (
+                      primaryBtn("Deliver", () => void post(`/tool-reservations/${r.id}/deliver`, "Delivered"))
+                    ) : (
+                      scanHint
+                    ),
                   ),
                 )}
               </QueueCard>

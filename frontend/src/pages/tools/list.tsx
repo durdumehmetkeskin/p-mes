@@ -2,7 +2,6 @@ import { useList } from "@refinedev/core";
 import { useTable } from "@refinedev/react-table";
 import type { ColumnDef } from "@tanstack/react-table";
 import {
-  AlertTriangle,
   Boxes,
   Eye,
   LayoutGrid,
@@ -59,8 +58,7 @@ export const ToolsList = () => {
 
   const total = useStatusCount();
   const inUse = useStatusCount("in_use");
-  const maintenance = useStatusCount("maintenance");
-  const retired = useStatusCount("retired");
+  const available = useStatusCount("available");
 
   const columns = useMemo<ColumnDef<ToolRecord>[]>(
     () => [
@@ -97,13 +95,15 @@ export const ToolsList = () => {
       },
       {
         id: "rack",
-        header: "Rack",
+        header: "Location",
         enableSorting: false,
         cell: ({ row }) => {
           const loc = row.original.rack;
           return loc ? (
             <span className="font-mono text-muted-foreground">
-              {[loc.warehouse?.code, loc.code].filter(Boolean).join(" / ")}
+              {[loc.zone?.warehouse?.code, loc.zone?.code, loc.code]
+                .filter(Boolean)
+                .join(" / ")}
             </span>
           ) : (
             "—"
@@ -183,28 +183,20 @@ export const ToolsList = () => {
       <ListViewHeader />
 
       {/* KPI strip */}
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 xl:grid-cols-3">
         <KpiCard label="Total Equipment" value={total} icon={Boxes} tone="primary" />
+        <KpiCard
+          label="Available"
+          value={available}
+          icon={Wrench}
+          tone="primary"
+        />
         <KpiCard
           label="In Use"
           value={inUse}
           icon={Zap}
           tone="info"
           valueTone="info"
-        />
-        <KpiCard
-          label="In Maintenance"
-          value={maintenance}
-          icon={Wrench}
-          tone="warning"
-          valueTone={maintenance > 0 ? "warning" : "neutral"}
-        />
-        <KpiCard
-          label="Retired"
-          value={retired}
-          icon={AlertTriangle}
-          tone="danger"
-          valueTone={retired > 0 ? "danger" : "neutral"}
         />
       </div>
 

@@ -11,7 +11,7 @@ import { Project } from '../project/entities/project.entity';
 import { ProjectMaterialReorder } from '../project/entities/project-material-reorder.entity';
 import { ProjectModule } from '../project/project.module';
 import { StorageModule } from '../storage/storage.module';
-import { ToolAssignment } from '../tooling/entities/tool-assignment.entity';
+import { ToolStatusHistory } from '../tooling/entities/tool-status-history.entity';
 import { Tool } from '../tooling/entities/tool.entity';
 import { User } from '../users/entities/user.entity';
 import { InventoryToolingDataSource } from './data-sources/inventory-tooling.data-source';
@@ -44,11 +44,11 @@ import { ReportsController } from './reports.controller';
       Process,
       ProcessStage,
       Tool,
-      // Detailed report sources: raw materials, tool assignments, inventory, users.
+      // Detailed report sources: raw materials, tool custody, inventory, users.
       Material,
       ProjectMaterialReorder,
       StockItem,
-      ToolAssignment,
+      ToolStatusHistory,
       User,
     ]),
     ProjectModule, // WorkloadService (workload data source)

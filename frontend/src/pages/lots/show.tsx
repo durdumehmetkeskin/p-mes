@@ -49,6 +49,16 @@ interface LotRecord {
   customer: { id: string; name: string } | null;
   project: { id: string; name: string; code?: string } | null;
   projectId: string | null;
+  rackId: string | null;
+  rack: {
+    id: string;
+    code: string;
+    name: string | null;
+    zone: {
+      code?: string;
+      warehouse: { id: string; code?: string; name?: string } | null;
+    } | null;
+  } | null;
 }
 interface StockItemRow {
   id: string;
@@ -69,11 +79,6 @@ interface StockItemRow {
   order: { orderNumber: string } | null;
   stage: { name: string } | null;
 }
-interface Opt {
-  id: string;
-  code?: string;
-  name?: string;
-}
 interface OrderOpt {
   id: string;
   orderNumber: string;
@@ -93,44 +98,48 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-/** Add an available stock item to this lot. */
-function AddStockItemDialog({ lotId }: { lotId: string }) {
+/** A locked placement row (stock always lives on the lot's rack). */
+function ReadOnlyRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <Label>{label}</Label>
+      <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Add an available stock item to this lot. Placement is NOT chosen here — the
+ * item always goes onto the lot's rack (backend enforces it too).
+ */
+function AddStockItemDialog({ lot }: { lot: LotRecord }) {
   const { open: notify } = useNotification();
   const invalidate = useInvalidate();
   const [open, setOpen] = useState(false);
-  const [warehouseId, setWarehouseId] = useState("");
-  const [rackId, setRackId] = useState<string | null>(null);
   const [quantity, setQuantity] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const { result: warehouses } = useList<Opt>({
-    resource: "warehouses",
-    pagination: { mode: "off" },
-  });
-  const { result: racks } = useList<Opt & { zone?: { code?: string; warehouse?: { code?: string } | null } | null }>({
-    resource: "racks",
-    pagination: { mode: "off" },
-  });
+  const rack = lot.rack;
+  const warehouse = rack?.zone?.warehouse ?? null;
 
   const submit = async () => {
     const qty = Number(quantity);
-    if (!warehouseId || !qty || qty <= 0) {
-      notify?.({ type: "error", message: "Warehouse and a positive quantity are required" });
+    if (!rack || !qty || qty <= 0) {
+      notify?.({ type: "error", message: "A positive quantity is required" });
       return;
     }
     setBusy(true);
     try {
+      // Placement (warehouse + rack) is derived from the lot server-side.
       await axiosInstance.post("/stock-items", {
-        lotId,
-        warehouseId,
-        rackId: rackId ?? undefined,
+        lotId: lot.id,
         quantity: qty,
       });
       REFRESH.forEach((r) => invalidate({ resource: r, invalidates: ["list"] }));
       notify?.({ type: "success", message: "Stock item added" });
       setOpen(false);
-      setWarehouseId("");
-      setRackId(null);
       setQuantity("");
     } catch (err) {
       const msg = (err as AxiosError<{ message?: string | string[] }>)?.response?.data?.message;
@@ -152,46 +161,41 @@ function AddStockItemDialog({ lotId }: { lotId: string }) {
         <DialogHeader>
           <DialogTitle>Add stock item</DialogTitle>
         </DialogHeader>
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-2">
-            <Label>Warehouse</Label>
-            <Select value={warehouseId} onValueChange={setWarehouseId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select a warehouse" />
-              </SelectTrigger>
-              <SelectContent>
-                {(warehouses?.data ?? []).map((w) => (
-                  <SelectItem key={w.id} value={w.id}>
-                    {[w.code, w.name].filter(Boolean).join(" · ")}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        {rack ? (
+          <div className="flex flex-col gap-4">
+            <ReadOnlyRow
+              label="Warehouse"
+              value={
+                warehouse
+                  ? [warehouse.code, warehouse.name].filter(Boolean).join(" · ")
+                  : "—"
+              }
+            />
+            <ReadOnlyRow
+              label="Rack"
+              value={[
+                [warehouse?.code, rack.zone?.code].filter(Boolean).join(" / "),
+                [rack.code, rack.name].filter(Boolean).join(" · "),
+              ]
+                .filter(Boolean)
+                .join(" / ")}
+            />
+            <p className="text-xs text-muted-foreground">
+              Stok her zaman lotun rafına konur; depo/raf değiştirilemez.
+            </p>
+            <div className="flex flex-col gap-2">
+              <Label>Quantity</Label>
+              <Input type="number" step="0.001" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+            </div>
           </div>
-          <div className="flex flex-col gap-2">
-            <Label>Rack (optional)</Label>
-            <Select value={rackId ?? NONE} onValueChange={(v) => setRackId(v === NONE ? null : v)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select a rack" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NONE}>— None —</SelectItem>
-                {(racks?.data ?? []).map((r) => (
-                  <SelectItem key={r.id} value={r.id}>
-                    {r.zone ? `${[r.zone.warehouse?.code, r.zone.code].filter(Boolean).join(" / ")} / ` : ""}
-                    {r.code}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label>Quantity</Label>
-            <Input type="number" step="0.001" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-          </div>
-        </div>
+        ) : (
+          <p className="text-sm text-warning">
+            Bu lota raf atanmamış — stok eklemeden önce lotu düzenleyip raf
+            atayın.
+          </p>
+        )}
         <DialogFooter>
-          <Button disabled={busy} onClick={() => void submit()}>
+          <Button disabled={busy || !rack} onClick={() => void submit()}>
             {busy ? "Adding…" : "Add"}
           </Button>
         </DialogFooter>
@@ -200,33 +204,21 @@ function AddStockItemDialog({ lotId }: { lotId: string }) {
   );
 }
 
-/** Edit an available stock item: quantity, location (warehouse/rack), note. */
+/**
+ * Edit an available stock item: quantity + note only. Placement is pinned to
+ * the lot's rack and shown read-only (backend rejects moves anyway).
+ */
 function EditStockItemDialog({ item }: { item: StockItemRow }) {
   const { open: notify } = useNotification();
   const invalidate = useInvalidate();
   const [open, setOpen] = useState(false);
-  const [warehouseId, setWarehouseId] = useState(item.warehouseId);
-  const [rackId, setRackId] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(String(item.quantity));
   const [note, setNote] = useState(item.note ?? "");
   const [busy, setBusy] = useState(false);
 
-  const { result: warehouses } = useList<Opt>({
-    resource: "warehouses",
-    pagination: { mode: "off" },
-    queryOptions: { enabled: open },
-  });
-  const { result: racks } = useList<Opt & { zone?: { code?: string; warehouse?: { code?: string } | null } | null }>({
-    resource: "racks",
-    pagination: { mode: "off" },
-    queryOptions: { enabled: open },
-  });
-
   // Re-seed the form from the row each time the dialog opens.
   const onOpenChange = (next: boolean) => {
     if (next) {
-      setWarehouseId(item.warehouseId);
-      setRackId(item.rackId ?? null);
       setQuantity(String(item.quantity));
       setNote(item.note ?? "");
     }
@@ -235,15 +227,13 @@ function EditStockItemDialog({ item }: { item: StockItemRow }) {
 
   const submit = async () => {
     const qty = Number(quantity);
-    if (!warehouseId || !qty || qty <= 0) {
-      notify?.({ type: "error", message: "Warehouse and a positive quantity are required" });
+    if (!qty || qty <= 0) {
+      notify?.({ type: "error", message: "A positive quantity is required" });
       return;
     }
     setBusy(true);
     try {
       await axiosInstance.patch(`/stock-items/${item.id}`, {
-        warehouseId,
-        rackId,
         quantity: qty,
         note: note.trim() || null,
       });
@@ -270,38 +260,11 @@ function EditStockItemDialog({ item }: { item: StockItemRow }) {
           <DialogTitle>Edit stock item</DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-2">
-            <Label>Warehouse</Label>
-            <Select value={warehouseId} onValueChange={setWarehouseId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select a warehouse" />
-              </SelectTrigger>
-              <SelectContent>
-                {(warehouses?.data ?? []).map((w) => (
-                  <SelectItem key={w.id} value={w.id}>
-                    {[w.code, w.name].filter(Boolean).join(" · ")}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label>Rack (optional)</Label>
-            <Select value={rackId ?? NONE} onValueChange={(v) => setRackId(v === NONE ? null : v)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select a rack" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NONE}>— None —</SelectItem>
-                {(racks?.data ?? []).map((r) => (
-                  <SelectItem key={r.id} value={r.id}>
-                    {r.zone ? `${[r.zone.warehouse?.code, r.zone.code].filter(Boolean).join(" / ")} / ` : ""}
-                    {r.code}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <ReadOnlyRow label="Warehouse" value={item.warehouse?.code ?? "—"} />
+          <ReadOnlyRow label="Rack" value={item.rack?.code ?? "—"} />
+          <p className="text-xs text-muted-foreground">
+            Stok her zaman lotun rafında durur; depo/raf değiştirilemez.
+          </p>
           <div className="flex flex-col gap-2">
             <Label>Quantity</Label>
             <Input type="number" step="0.001" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
@@ -543,6 +506,17 @@ export const LotsShow = () => {
               <Field label="Project">
                 {record.project ? [record.project.code, record.project.name].filter(Boolean).join(" · ") : "—"}
               </Field>
+              <Field label="Rack">
+                {record.rack
+                  ? [
+                      record.rack.zone?.warehouse?.code,
+                      record.rack.zone?.code,
+                      record.rack.code,
+                    ]
+                      .filter(Boolean)
+                      .join(" / ")
+                  : "—"}
+              </Field>
               <Field label="Expiry status">
                 <StatusBadge label={record.status} />
               </Field>
@@ -555,7 +529,7 @@ export const LotsShow = () => {
         <CardHeader>
           <CardTitle className="flex flex-wrap items-center justify-between gap-2 text-base">
             <span>Stock items ({rows.length})</span>
-            {id ? <AddStockItemDialog lotId={id} /> : null}
+            {record ? <AddStockItemDialog lot={record} /> : null}
           </CardTitle>
         </CardHeader>
         <CardContent>

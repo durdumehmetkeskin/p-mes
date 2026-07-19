@@ -1,8 +1,8 @@
 import { useCreate, useInvalidate, useList } from "@refinedev/core";
 import { Plus } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Control, FieldErrors, UseFormRegister } from "react-hook-form";
-import { Controller } from "react-hook-form";
+import { Controller, useController, useWatch } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -37,8 +37,24 @@ interface ToolTypeOption {
 interface RackOption {
   id: string;
   code: string;
-  zone?: { code?: string; warehouse?: { code?: string } | null } | null;
+  zone?: {
+    id?: string;
+    code?: string;
+    warehouse?: { code?: string } | null;
+  } | null;
 }
+
+interface ZoneOption {
+  id: string;
+  code: string;
+  name?: string | null;
+  warehouse?: { code?: string; name?: string } | null;
+}
+
+const NO_ZONE = "__none__";
+
+const rackLabel = (r: RackOption) =>
+  `${r.zone ? `${[r.zone.warehouse?.code, r.zone.code].filter(Boolean).join(" / ")} / ` : ""}${r.code}`;
 
 /**
  * Tool type picker with an inline "new type" creator, so a missing type can be
@@ -174,13 +190,11 @@ export const TOOL_CATEGORIES = [
   },
 ] as const;
 
-// Mirrors the backend ToolStatus enum (value → label).
+// Mirrors the backend ToolStatus enum (value → label) — material-style
+// two-state lifecycle.
 export const TOOL_STATUSES = [
   { value: "available", label: "Available" },
   { value: "in_use", label: "In use" },
-  { value: "maintenance", label: "Maintenance" },
-  { value: "calibration", label: "Calibration" },
-  { value: "retired", label: "Retired" },
 ] as const;
 
 export function toolCategoryLabel(value: string): string {
@@ -204,7 +218,64 @@ export function ToolFormFields({ register, control, errors }: Props) {
     resource: "racks",
     pagination: { mode: "off" },
   });
-  const binOptions = racks?.data ?? [];
+  const allRacks = racks?.data ?? [];
+
+  // Placement cascade: customer → project → the PROJECT's zone (auto when it
+  // has exactly one) → a rack of that zone. A project tool cannot go into
+  // another zone (backend enforces the same rule). Project-less tools keep the
+  // free rack picker. The zone itself is UI-only (tools store rackId).
+  const projectId = useWatch({ control, name: "projectId" }) as
+    | string
+    | null
+    | undefined;
+  const rack = useController({ control, name: "rackId", defaultValue: null });
+  const rackValue = rack.field.value ? String(rack.field.value) : "";
+  const [zoneId, setZoneId] = useState("");
+
+  const { result: zonesResult } = useList<ZoneOption>({
+    resource: "zones",
+    pagination: { mode: "off" },
+    filters: projectId
+      ? [{ field: "projectId", operator: "eq", value: projectId }]
+      : [],
+    queryOptions: { enabled: Boolean(projectId) },
+  });
+  const projectZones = projectId ? (zonesResult?.data ?? []) : [];
+
+  // Edit case: seed the zone from the already-assigned rack.
+  useEffect(() => {
+    if (zoneId || !rackValue) return;
+    const r = allRacks.find((x) => x.id === rackValue);
+    if (r?.zone?.id) setZoneId(r.zone.id);
+  }, [zoneId, rackValue, allRacks]);
+  // The project's only zone comes automatically.
+  useEffect(() => {
+    if (!projectId || zoneId) return;
+    if (projectZones.length === 1) setZoneId(projectZones[0].id);
+  }, [projectId, zoneId, projectZones]);
+  // Project changed (or legacy mismatch): a zone outside the project resets
+  // zone + rack.
+  useEffect(() => {
+    if (!projectId || !zoneId || !zonesResult) return;
+    if (!projectZones.some((z) => z.id === zoneId)) {
+      setZoneId("");
+      rack.field.onChange(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, zoneId, projectZones, zonesResult]);
+  // Zone changed: a rack outside the zone resets.
+  useEffect(() => {
+    if (!zoneId || !rackValue) return;
+    const r = allRacks.find((x) => x.id === rackValue);
+    if (r && r.zone?.id !== zoneId) rack.field.onChange(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoneId, rackValue, allRacks]);
+
+  const rackOptions = zoneId
+    ? allRacks.filter((r) => r.zone?.id === zoneId)
+    : projectId
+      ? []
+      : allRacks;
 
   return (
     <>
@@ -311,34 +382,77 @@ export function ToolFormFields({ register, control, errors }: Props) {
         </div>
       </div>
 
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="rackId">Rack (warehouse / rack)</Label>
-        <Controller
-          name="rackId"
-          control={control}
-          defaultValue={null}
-          render={({ field }) => (
-            <Select
-              value={field.value ? String(field.value) : NO_RACK}
-              onValueChange={(v) =>
-                field.onChange(v === NO_RACK ? null : v)
-              }
-            >
-              <SelectTrigger id="rackId">
-                <SelectValue placeholder="Select a rack" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NO_RACK}>— None —</SelectItem>
-                {binOptions.map((l) => (
-                  <SelectItem key={l.id} value={l.id}>
-                    {l.zone ? `${[l.zone.warehouse?.code, l.zone.code].filter(Boolean).join(" / ")} / ` : ""}
-                    {l.code}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="zoneId">Zone (project area)</Label>
+          <Select
+            value={zoneId || NO_ZONE}
+            onValueChange={(v) => {
+              setZoneId(v === NO_ZONE ? "" : v);
+              rack.field.onChange(null);
+            }}
+            disabled={!projectId || projectZones.length <= 1}
+          >
+            <SelectTrigger id="zoneId">
+              <SelectValue
+                placeholder={
+                  projectId ? "Select a zone" : "Select a project first"
+                }
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {!projectId && <SelectItem value={NO_ZONE}>—</SelectItem>}
+              {projectZones.map((z) => (
+                <SelectItem key={z.id} value={z.id}>
+                  {[z.warehouse?.code, z.code, z.name]
+                    .filter(Boolean)
+                    .join(" / ")}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {projectId && zonesResult && projectZones.length === 0 && (
+            <span className="text-xs text-warning">
+              Bu projenin bölgesi (zone) yok — önce projeye bir bölge
+              tanımlayın.
+            </span>
           )}
-        />
+        </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="rackId">Rack</Label>
+          <Select
+            value={rackValue || NO_RACK}
+            onValueChange={(v) =>
+              rack.field.onChange(v === NO_RACK ? null : v)
+            }
+            disabled={Boolean(projectId) && !zoneId}
+          >
+            <SelectTrigger id="rackId">
+              <SelectValue
+                placeholder={
+                  !projectId || zoneId
+                    ? "Select a rack"
+                    : "Select a zone first"
+                }
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {!projectId && (
+                <SelectItem value={NO_RACK}>— None —</SelectItem>
+              )}
+              {rackOptions.map((l) => (
+                <SelectItem key={l.id} value={l.id}>
+                  {rackLabel(l)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {Boolean(projectId) && zoneId && !rackValue && (
+            <span className="text-xs text-muted-foreground">
+              Projeye ait takım için bu bölgeden bir raf seçilmelidir.
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
@@ -355,30 +469,6 @@ export function ToolFormFields({ register, control, errors }: Props) {
         <div className="flex flex-col gap-2">
           <Label htmlFor="purchaseDate">Purchase date</Label>
           <Input id="purchaseDate" type="date" {...register("purchaseDate")} />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="nextMaintenanceDate">
-            Next maintenance / calibration
-          </Label>
-          <Input
-            id="nextMaintenanceDate"
-            type="date"
-            {...register("nextMaintenanceDate")}
-          />
-        </div>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="maxLifeCycle">Rated life (max cycles)</Label>
-          <Input
-            id="maxLifeCycle"
-            type="number"
-            step="1"
-            min="0"
-            placeholder="e.g. 100000"
-            {...register("maxLifeCycle", { valueAsNumber: true, min: 0 })}
-          />
         </div>
       </div>
 

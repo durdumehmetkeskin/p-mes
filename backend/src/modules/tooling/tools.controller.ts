@@ -20,15 +20,9 @@ import { RequirePermissions } from '../auth/decorators/require-permissions.decor
 import { WarehouseScoped } from '../auth/decorators/warehouse-scoped.decorator';
 import { WarehouseScopeService } from '../inventory/warehouse-scope.service';
 import { User } from '../users/entities/user.entity';
-import { AddToolCyclesDto } from './dto/add-tool-cycles.dto';
-import { AssignToolDto } from './dto/assign-tool.dto';
 import { ChangeToolStatusDto } from './dto/change-tool-status.dto';
 import { CreateToolDto } from './dto/create-tool.dto';
-import { EndToolUsageDto } from './dto/end-tool-usage.dto';
 import { ListToolsQueryDto } from './dto/list-tools-query.dto';
-import { ResetToolCyclesDto } from './dto/reset-tool-cycles.dto';
-import { ReturnToolDto } from './dto/return-tool.dto';
-import { StartToolUsageDto } from './dto/start-tool-usage.dto';
 import { UpdateToolDto } from './dto/update-tool.dto';
 import { Tool } from './entities/tool.entity';
 import { ToolsService } from './tools.service';
@@ -172,113 +166,6 @@ export class ToolsController {
       dto,
       user,
       WarehouseScopeService.resolveScope(user, 'tools:update-status'),
-    );
-  }
-
-  @RequirePermissions('tools:create-assign')
-  @WarehouseScoped()
-  @Post(':id/assign')
-  @ApiOperation({
-    summary: 'Assign (check out) a tool to an assignee',
-  })
-  assign(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: AssignToolDto,
-    @CurrentUser() user: User,
-  ): Promise<Tool> {
-    return this.toolsService.assign(
-      id,
-      dto,
-      user,
-      WarehouseScopeService.resolveScope(user, 'tools:create-assign'),
-    );
-  }
-
-  @RequirePermissions('tools:create-return')
-  @WarehouseScoped()
-  @Post(':id/return')
-  @ApiOperation({ summary: 'Return (check in) a tool' })
-  returnTool(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: ReturnToolDto,
-    @CurrentUser() user: User,
-  ): Promise<Tool> {
-    return this.toolsService.return(
-      id,
-      dto,
-      user,
-      WarehouseScopeService.resolveScope(user, 'tools:create-return'),
-    );
-  }
-
-  @RequirePermissions('tools:create-start')
-  @WarehouseScoped()
-  @Post(':id/usage/start')
-  @ApiOperation({ summary: 'Start a tool usage session' })
-  startUsage(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: StartToolUsageDto,
-    @CurrentUser() user: User,
-  ): Promise<Tool> {
-    return this.toolsService.startUsage(
-      id,
-      dto,
-      user,
-      WarehouseScopeService.resolveScope(user, 'tools:create-start'),
-    );
-  }
-
-  @RequirePermissions('tools:create-end')
-  @WarehouseScoped()
-  @Post(':id/usage/end')
-  @ApiOperation({ summary: 'End the tool usage session' })
-  endUsage(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: EndToolUsageDto,
-    @CurrentUser() user: User,
-  ): Promise<Tool> {
-    return this.toolsService.endUsage(
-      id,
-      dto,
-      WarehouseScopeService.resolveScope(user, 'tools:create-end'),
-    );
-  }
-
-  @RequirePermissions('tools:create-cycles')
-  @WarehouseScoped()
-  @Post(':id/cycles')
-  @ApiOperation({
-    summary: 'Add cycles to the tool cycle counter',
-  })
-  addCycles(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: AddToolCyclesDto,
-    @CurrentUser() user: User,
-  ): Promise<Tool> {
-    return this.toolsService.addCycles(
-      id,
-      dto,
-      user,
-      WarehouseScopeService.resolveScope(user, 'tools:create-cycles'),
-    );
-  }
-
-  @RequirePermissions('tools:create-reset')
-  @WarehouseScoped()
-  @Post(':id/cycles/reset')
-  @ApiOperation({
-    summary: 'Reset the tool cycle counter to 0',
-  })
-  resetCycles(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: ResetToolCyclesDto,
-    @CurrentUser() user: User,
-  ): Promise<Tool> {
-    return this.toolsService.resetCycles(
-      id,
-      dto,
-      user,
-      WarehouseScopeService.resolveScope(user, 'tools:create-reset'),
     );
   }
 

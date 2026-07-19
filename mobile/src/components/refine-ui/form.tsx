@@ -290,12 +290,15 @@ export function RelationSelectField<T extends FieldValues>({
   resource,
   getLabel,
   filters,
+  filterItem,
   placeholder,
   allowClear,
 }: BaseFieldProps<T> & {
   resource: string;
   getLabel: (item: BaseRecord) => string;
   filters?: CrudFilter[];
+  /** Client-side option filter (for rules the list endpoint can't express). */
+  filterItem?: (item: BaseRecord) => boolean;
   placeholder?: string;
   allowClear?: boolean;
 }) {
@@ -306,10 +309,12 @@ export function RelationSelectField<T extends FieldValues>({
     queryOptions: { retry: false },
     errorNotification: false,
   });
-  const options: SelectOption[] = (result?.data ?? []).map((item) => ({
-    label: getLabel(item),
-    value: String(item.id),
-  }));
+  const options: SelectOption[] = (result?.data ?? [])
+    .filter((item) => (filterItem ? filterItem(item) : true))
+    .map((item) => ({
+      label: getLabel(item),
+      value: String(item.id),
+    }));
 
   return (
     <Controller
