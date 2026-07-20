@@ -133,7 +133,7 @@ export class ProductsController {
   @Post(':id/store')
   @ApiOperation({
     summary:
-      "Drop the product onto a location-storage rack (one-sided; → received)",
+      'Drop the product onto a location-storage rack (one-sided; → received)',
   })
   store(
     @Param('id', ParseUUIDPipe) id: string,
@@ -141,6 +141,20 @@ export class ProductsController {
     @CurrentUser() user: User,
   ): Promise<Product> {
     return this.productsService.store(id, dto.storageRackId, user);
+  }
+
+  // No @RequirePermissions: the service authorizes a worker of the CONSUMING
+  // stage (or an admin) — picking up an input product by QR scan is stage
+  // work, no product key needed (mirrors stock-items receive).
+  @Post(':id/receive-input')
+  @ApiOperation({
+    summary: 'Receive an input product at its consuming stage (stage worker)',
+  })
+  receiveInput(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+  ): Promise<Product> {
+    return this.productsService.receiveInput(id, user);
   }
 
   // Marking a product as a stage's input is stage work, not product editing —
@@ -158,7 +172,7 @@ export class ProductsController {
 
   @RequirePermissions('products:consume')
   @Delete(':id/consume')
-  @ApiOperation({ summary: "Release a product from its consuming stage" })
+  @ApiOperation({ summary: 'Release a product from its consuming stage' })
   releaseConsume(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: User,

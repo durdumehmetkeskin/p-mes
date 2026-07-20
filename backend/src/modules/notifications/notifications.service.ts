@@ -18,6 +18,7 @@ export const NotificationType = {
   ToolReturning: 'tool_returning',
   ProductDelivering: 'product_delivering',
   ProductReceived: 'product_received',
+  ProductInputReady: 'product_input_ready',
 } as const;
 
 export interface NotifyInput {

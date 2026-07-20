@@ -258,7 +258,7 @@ export class SectionScheduleService {
       .addSelect('s.estimated_duration_hours', 'estimatedDurationHours')
       .addSelect('s.duration_hours', 'durationHours')
       .addSelect(
-        '(SELECT string_agg(u2.name, \', \' ORDER BY u2.name) FROM process_stage_workers w2 JOIN users u2 ON u2.id = w2.user_id WHERE w2.stage_id = s.id)',
+        "(SELECT string_agg(u2.name, ', ' ORDER BY u2.name) FROM process_stage_workers w2 JOIN users u2 ON u2.id = w2.user_id WHERE w2.stage_id = s.id)",
         'workerNames',
       )
       .addSelect('p.id', 'processId')

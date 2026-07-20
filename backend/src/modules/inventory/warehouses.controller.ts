@@ -14,11 +14,15 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
+import { WarehouseScoped } from '../auth/decorators/warehouse-scoped.decorator';
+import type { User } from '../users/entities/user.entity';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto';
 import { ListWarehousesQueryDto } from './dto/list-warehouses-query.dto';
 import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
 import { Warehouse } from './entities/warehouse.entity';
+import { WarehouseScopeService } from './warehouse-scope.service';
 import { WarehousesService } from './warehouses.service';
 
 const SORTABLE_FIELDS: ReadonlyArray<keyof Warehouse> = [
@@ -36,12 +40,14 @@ const SORTABLE_FIELDS: ReadonlyArray<keyof Warehouse> = [
 export class WarehousesController {
   constructor(private readonly warehousesService: WarehousesService) {}
 
-  // Reads available to any authenticated user.
+  // Reads: key holders see all; warehouse responsibles see their own.
   @RequirePermissions('warehouses:read')
+  @WarehouseScoped()
   @Get()
   @ApiOperation({ summary: 'List warehouses (paginated)' })
   async findAll(
     @Query() query: ListWarehousesQueryDto,
+    @CurrentUser() user: User,
     @Res({ passthrough: true }) res: Response,
   ): Promise<Warehouse[]> {
     const skip = query._start ?? 0;
@@ -58,6 +64,7 @@ export class WarehousesController {
       sort,
       order,
       q: query.q,
+      scope: WarehouseScopeService.resolveScope(user, 'warehouses:read'),
     });
 
     res.setHeader('x-total-count', total);
@@ -65,10 +72,17 @@ export class WarehousesController {
   }
 
   @RequirePermissions('warehouses:read')
+  @WarehouseScoped()
   @Get(':id')
   @ApiOperation({ summary: 'Get a warehouse by id' })
-  findOne(@Param('id', ParseUUIDPipe) id: string): Promise<Warehouse> {
-    return this.warehousesService.findOne(id);
+  findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+  ): Promise<Warehouse> {
+    return this.warehousesService.findOne(
+      id,
+      WarehouseScopeService.resolveScope(user, 'warehouses:read'),
+    );
   }
 
   // Writes require the admin role.

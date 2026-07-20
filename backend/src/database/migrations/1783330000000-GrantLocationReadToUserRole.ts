@@ -6,9 +6,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * reservation schedule, storage racks, sensor data). Write keys are NOT
  * granted — the area stays read-only for plain members.
  */
-export class GrantLocationReadToUserRole1783330000000
-  implements MigrationInterface
-{
+export class GrantLocationReadToUserRole1783330000000 implements MigrationInterface {
   name = 'GrantLocationReadToUserRole1783330000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

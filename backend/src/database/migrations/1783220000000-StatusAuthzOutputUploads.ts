@@ -8,9 +8,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * upload stage output/input documents at completion, so the `user` role gains
  * `attachments:create` (the service now membership-checks the upload owner).
  */
-export class StatusAuthzOutputUploads1783220000000
-  implements MigrationInterface
-{
+export class StatusAuthzOutputUploads1783220000000 implements MigrationInterface {
   name = 'StatusAuthzOutputUploads1783220000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

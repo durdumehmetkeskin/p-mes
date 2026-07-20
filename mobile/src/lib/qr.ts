@@ -45,12 +45,15 @@ export async function routeToQrEntity(
   }
   if (type === "stock-item") {
     // Handover: the screen decides deliver vs receive from the item's status.
-    router.replace(`/stock-items/${id}/handover`);
+    // `scanned=1` proves physical presence — it unlocks the direct Receive
+    // (custody) action on the handover screen.
+    router.replace(`/stock-items/${id}/handover?scanned=1`);
     return true;
   }
   if (type === "product") {
-    // Handover: producer delivers, warehouse receives (by handover status).
-    router.replace(`/products/${id}/handover`);
+    // Handover: storage drop-off + input pickup. `scanned=1` proves physical
+    // presence — it unlocks the direct input-receive (custody) action.
+    router.replace(`/products/${id}/handover?scanned=1`);
     return true;
   }
   if (type === "order-item") {

@@ -1,5 +1,11 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsIn, IsOptional, IsUUID, ValidateNested } from 'class-validator';
+import {
+  IsArray,
+  IsIn,
+  IsOptional,
+  IsUUID,
+  ValidateNested,
+} from 'class-validator';
 
 export class ProcessStageLinkInputDto {
   @IsUUID()

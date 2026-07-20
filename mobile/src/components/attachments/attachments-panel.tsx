@@ -21,12 +21,19 @@ interface Attachment {
   size?: number;
 }
 
-type OwnerType = "project" | "process" | "order_item" | "stage";
+type OwnerType =
+  | "project"
+  | "process"
+  | "order_item"
+  | "stage"
+  | "stage_input"
+  | "stage_output";
 
 export function AttachmentsPanel({
   ownerType,
   ownerId,
   canUpload,
+  title = "Attachments",
 }: {
   ownerType: OwnerType;
   ownerId: string;
@@ -36,6 +43,8 @@ export function AttachmentsPanel({
    * admin). Leave undefined to keep the default attachments:create gating.
    */
   canUpload?: boolean;
+  /** Panel heading (e.g. "Output documents"). */
+  title?: string;
 }) {
   const router = useRouter();
   const [items, setItems] = useState<Attachment[]>([]);
@@ -128,7 +137,7 @@ export function AttachmentsPanel({
     <View className="overflow-hidden rounded-lg border border-border bg-card">
       <View className="flex-row items-center justify-between border-b border-border p-3">
         <Text className="font-sans-semibold text-sm text-card-foreground">
-          Attachments ({items.length})
+          {title} ({items.length})
         </Text>
         {(() => {
           const menu = (

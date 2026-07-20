@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { FindOptionsWhere, ILike, Repository } from 'typeorm';
+import { FindOptionsWhere, ILike, In, Repository } from 'typeorm';
 import { Warehouse } from './entities/warehouse.entity';
 
 @Injectable()
@@ -24,10 +24,18 @@ export class WarehousesRepository {
     sort: keyof Warehouse;
     order: 'ASC' | 'DESC';
     q?: string;
+    ids?: string[];
   }): Promise<[Warehouse[], number]> {
-    const where: FindOptionsWhere<Warehouse>[] | undefined = options.q
-      ? [{ code: ILike(`%${options.q}%`) }, { name: ILike(`%${options.q}%`) }]
-      : undefined;
+    const base: FindOptionsWhere<Warehouse> = options.ids
+      ? { id: In(options.ids) }
+      : {};
+    const where: FindOptionsWhere<Warehouse>[] | FindOptionsWhere<Warehouse> =
+      options.q
+        ? [
+            { ...base, code: ILike(`%${options.q}%`) },
+            { ...base, name: ILike(`%${options.q}%`) },
+          ]
+        : base;
 
     return this.repo.findAndCount({
       where,

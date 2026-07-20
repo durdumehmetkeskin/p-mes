@@ -8,9 +8,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * project-level customer/contact mutations are manager/admin-only in the
  * service layer.
  */
-export class GrantCustomerReadToUserRole1783310000000
-  implements MigrationInterface
-{
+export class GrantCustomerReadToUserRole1783310000000 implements MigrationInterface {
   name = 'GrantCustomerReadToUserRole1783310000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

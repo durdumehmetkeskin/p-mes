@@ -306,7 +306,10 @@ export class ProcessStagesService {
   private static stageWindow(
     stage: Pick<
       ProcessStage,
-      'startedAt' | 'completedAt' | 'estimatedStartDate' | 'estimatedCompletedDate'
+      | 'startedAt'
+      | 'completedAt'
+      | 'estimatedStartDate'
+      | 'estimatedCompletedDate'
     >,
   ): { start: string | null; end: string | null } {
     const day = (d: Date | null) =>
@@ -538,6 +541,26 @@ export class ProcessStagesService {
     return this.reports.findOne({ where: { stageId } });
   }
 
+  /**
+   * The completion report is stage work: only that stage's workers, the owning
+   * process responsible or an admin may write/remove it (mirrors the
+   * stage-document editor rule in attachments).
+   */
+  private async assertReportEditor(
+    stage: ProcessStage,
+    user?: User,
+  ): Promise<void> {
+    if (ProjectsService.isAdmin(user)) return;
+    if (user && (stage.workers ?? []).some((w) => w.id === user.id)) return;
+    const process = await this.processes.findOne({
+      where: { id: stage.processId },
+    });
+    if (user && process?.responsibleUserId === user.id) return;
+    throw new ForbiddenException(
+      'Tamamlama raporunu yalnızca aşama çalışanı, proses sorumlusu veya admin yazabilir.',
+    );
+  }
+
   /** Create/update the completion report — only when the stage is completed. */
   async upsertCompletionReport(
     stageId: string,
@@ -547,6 +570,7 @@ export class ProcessStagesService {
     await this.assertStageAccess(stageId, user);
     const stage = await this.stages.findOne({ where: { id: stageId } });
     if (!stage) throw new NotFoundException(`Stage ${stageId} not found`);
+    await this.assertReportEditor(stage, user);
     if (stage.status !== ProcessStageStatus.Completed) {
       throw new BadRequestException(
         'The stage must be completed to file a completion report',
@@ -563,6 +587,9 @@ export class ProcessStagesService {
 
   async removeCompletionReport(stageId: string, user?: User): Promise<void> {
     await this.assertStageAccess(stageId, user);
+    const stage = await this.stages.findOne({ where: { id: stageId } });
+    if (!stage) throw new NotFoundException(`Stage ${stageId} not found`);
+    await this.assertReportEditor(stage, user);
     const report = await this.reports.findOne({ where: { stageId } });
     if (report) await this.reports.softRemove(report);
   }
@@ -884,7 +911,7 @@ export class ProcessStagesService {
       remaining.map((s) => s.id),
       links.map((l) => ({ from: l.fromStageId, to: l.toStageId })),
       (a, b) =>
-        (byId.get(a)!.sequence - byId.get(b)!.sequence) ||
+        byId.get(a)!.sequence - byId.get(b)!.sequence ||
         byId.get(a)!.name.localeCompare(byId.get(b)!.name),
     );
     // Cycles cannot exist here (validated on write), but stay defensive.
@@ -994,6 +1021,28 @@ export class ProcessStagesService {
       await this.toolReservationsService.assertAllReceived(id);
     }
 
+    // Cannot complete until every held tool's return has been STARTED
+    // (returning/returned pass — the crib's acceptance may lag) and every
+    // delivered material has been returned or explicitly marked consumed.
+    if (status === ProcessStageStatus.Completed) {
+      const heldTools = await this.toolReservations.count({
+        where: { stageId: id, status: ToolReservationStatus.Received },
+      });
+      if (heldTools > 0) {
+        throw new BadRequestException(
+          'Bu aşama tamamlanamaz: kullanılan araçlar depoya iade edilmeli — QR okutarak iadeyi başlatın',
+        );
+      }
+      const heldItems = await this.stockItems.count({
+        where: { stageId: id, status: StockItemStatus.Delivered },
+      });
+      if (heldItems > 0) {
+        throw new BadRequestException(
+          'Bu aşama tamamlanamaz: teslim alınan malzemeler iade edilmeli veya tüketildi olarak işaretlenmeli',
+        );
+      }
+    }
+
     const now = new Date();
     stage.status = status;
     if (status === ProcessStageStatus.Completed) {
@@ -1011,30 +1060,6 @@ export class ProcessStagesService {
       stage.completedAt = null;
     }
     const saved = await this.stages.save(stage);
-
-    // Completing with tools still on hand → remind every worker to QR-return
-    // them to the crib (a warning, not a block).
-    if (status === ProcessStageStatus.Completed) {
-      const unreturned = await this.toolReservations.count({
-        where: { stageId: id, status: ToolReservationStatus.Received },
-      });
-      if (unreturned > 0) {
-        for (const worker of stage.workers ?? []) {
-          await this.notifications.notifyUser(
-            worker.id,
-            {
-              type: NotificationType.ToolReturning,
-              title: 'Araç iadesi gerekli',
-              message: `"${stage.name}" aşaması tamamlandı — kullanılan ${unreturned} aracı QR okutarak depoya iade edin`,
-              link: `/tools`,
-              entityType: 'process-stage',
-              entityId: id,
-            },
-            user?.id,
-          );
-        }
-      }
-    }
 
     await this.recomputeOverall(stage.processId);
     // A duration entered at completion changes the process total.

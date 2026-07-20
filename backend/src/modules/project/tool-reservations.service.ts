@@ -285,6 +285,8 @@ export class ToolReservationsService {
       .leftJoinAndSelect('rk.zone', 'z')
       .leftJoinAndSelect('z.warehouse', 'w')
       .leftJoinAndSelect('r.stage', 's')
+      // Recipients: the crib queue shows WHO will pick the tool up.
+      .leftJoinAndSelect('s.workers', 'sw')
       .leftJoinAndSelect('s.process', 'p')
       .leftJoinAndSelect('p.orderItem', 'oi')
       .leftJoinAndSelect('oi.order', 'o')
@@ -345,6 +347,10 @@ export class ToolReservationsService {
             status: r.stage.status,
             estimatedStartDate: r.stage.estimatedStartDate,
             estimatedCompletedDate: r.stage.estimatedCompletedDate,
+            workers: (r.stage.workers ?? []).map((w) => ({
+              id: w.id,
+              name: w.name,
+            })),
           }
         : null,
       order: order ? { orderNumber: order.orderNumber } : null,

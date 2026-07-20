@@ -83,18 +83,17 @@ export class StockItemsController {
     return items;
   }
 
-  @RequirePermissions('stock-items:read')
-  @WarehouseScoped()
+  // No @RequirePermissions: authorization is decided in the service — key
+  // holders / warehouse responsibles see any in-scope item, and the item's
+  // stage workers / process responsible may read it too (the QR handover
+  // screen needs the detail without a stock key). Others get 404.
   @Get(':id')
   @ApiOperation({ summary: 'Get a stock item by id' })
   findOne(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: User,
   ): Promise<StockItem> {
-    return this.stockItemsService.findOne(
-      id,
-      WarehouseScopeService.resolveScope(user, 'stock-items:read'),
-    );
+    return this.stockItemsService.findOneForUser(id, user);
   }
 
   @RequirePermissions('stock-items:read')
@@ -138,7 +137,8 @@ export class StockItemsController {
   @WarehouseScoped()
   @Patch(':id')
   @ApiOperation({
-    summary: 'Edit an available stock item (quantity / warehouse / rack / note)',
+    summary:
+      'Edit an available stock item (quantity / warehouse / rack / note)',
   })
   update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -231,6 +231,20 @@ export class StockItemsController {
     @CurrentUser() user: User,
   ): Promise<StockItem> {
     return this.stockItemsService.returnToWarehouse(id, user);
+  }
+
+  // No @RequirePermissions: the service authorizes a stage worker (or an
+  // admin) — marking a delivered item fully used is stage work, no stock key.
+  @Post(':id/consume-delivered')
+  @ApiOperation({
+    summary:
+      'Mark a delivered item fully consumed at its stage (stage worker; → consumed)',
+  })
+  consumeDelivered(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+  ): Promise<StockItem> {
+    return this.stockItemsService.consumeDelivered(id, user);
   }
 
   // No @RequirePermissions: the service authorizes the stage/process

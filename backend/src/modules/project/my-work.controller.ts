@@ -15,18 +15,16 @@ export class MyWorkController {
   @Get('checkouts')
   @ApiOperation({
     summary:
-      "Materials and tools currently checked out to the caller (received, not yet returned)",
+      'Materials and tools currently checked out to the caller (received, not yet returned)',
   })
-  checkouts(
-    @CurrentUser() user: User,
-  ): ReturnType<MyWorkService['checkouts']> {
+  checkouts(@CurrentUser() user: User): ReturnType<MyWorkService['checkouts']> {
     return this.service.checkouts(user);
   }
 
   @Get('responsibilities')
   @ApiOperation({
     summary:
-      "Processes the caller is responsible for, with full stage progress",
+      'Processes the caller is responsible for, with full stage progress',
   })
   responsibilities(
     @CurrentUser() user: User,

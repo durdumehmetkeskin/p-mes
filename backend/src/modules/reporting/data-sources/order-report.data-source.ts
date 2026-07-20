@@ -112,8 +112,7 @@ export class OrderReportDataSource implements ReportDataSourceProvider {
           sequence: s.sequence,
           name: s.name,
           status: s.status,
-          responsible:
-            (s.workers ?? []).map((w) => w.name).join(', ') || null,
+          responsible: (s.workers ?? []).map((w) => w.name).join(', ') || null,
           startedAt: s.startedAt,
           completedAt: s.completedAt,
           estimatedStartDate: s.estimatedStartDate,

@@ -32,6 +32,8 @@ export class ProductHandover1783240000000 implements MigrationInterface {
         DROP COLUMN IF EXISTS "received_by_user_id",
         DROP COLUMN IF EXISTS "received_at"
     `);
-    await queryRunner.query(`DROP TYPE IF EXISTS "product_handover_status_enum"`);
+    await queryRunner.query(
+      `DROP TYPE IF EXISTS "product_handover_status_enum"`,
+    );
   }
 }

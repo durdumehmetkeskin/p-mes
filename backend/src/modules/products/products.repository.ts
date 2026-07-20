@@ -58,7 +58,8 @@ export class ProductsRepository {
       .leftJoinAndSelect('product.storageRack', 'storageRack')
       .leftJoinAndSelect('storageRack.storage', 'storage')
       .leftJoinAndSelect('storage.location', 'storageLocation')
-      .leftJoinAndSelect('product.producedByUser', 'producedByUser');
+      .leftJoinAndSelect('product.producedByUser', 'producedByUser')
+      .leftJoinAndSelect('product.inputReceivedByUser', 'inputReceivedByUser');
 
     if (options.memberProjectIds) {
       if (options.memberProjectIds.length === 0) {

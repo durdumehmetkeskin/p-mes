@@ -1,5 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, ScrollView, Text, View } from "react-native";
+import {
+  BottomSheetBackdrop,
+  type BottomSheetBackdropProps,
+  BottomSheetModal,
+  BottomSheetView,
+} from "@gorhom/bottom-sheet";
+import { SafeAreaView } from "react-native-safe-area-context";
 import {
   type BaseRecord,
   useApiUrl,
@@ -42,15 +49,18 @@ interface StockItem extends BaseRecord {
   warehouse?: { code?: string } | null;
   rack?: {
     code?: string;
-    zone?: { code?: string; project?: { code?: string } | null } | null;
+    zone?: {
+      code?: string;
+      project?: { code?: string; name?: string } | null;
+    } | null;
   } | null;
   order?: { orderNumber?: string } | null;
-  stage?: { name?: string } | null;
+  stage?: { name?: string; workers?: Array<{ name?: string }> } | null;
   lot?: {
     id?: string;
     lotNumber?: string;
     material?: { code?: string; name?: string } | null;
-    project?: { code?: string } | null;
+    project?: { code?: string; name?: string } | null;
   } | null;
 }
 interface ToolReservation {
@@ -59,7 +69,7 @@ interface ToolReservation {
   /** False while the tool is in use / mid-handover elsewhere — hide Deliver. */
   deliverable?: boolean;
   tool?: { id: string; code?: string; name?: string } | null;
-  stage?: { name?: string } | null;
+  stage?: { name?: string; workers?: Array<{ name?: string }> } | null;
   order?: { orderNumber?: string } | null;
 }
 interface ToolRow extends BaseRecord {
@@ -163,6 +173,44 @@ export default function MyWarehouseScreen() {
         Alert.alert("Failed", Array.isArray(msg) ? msg.join(", ") : (msg ?? "Error"));
       });
 
+  // "Prepare" flow: the sheet stays open while the responsible physically
+  // prepares the material; Confirm inside it fires confirm-reserve.
+  const prepareRef = useRef<BottomSheetModal>(null);
+  const [prepareItem, setPrepareItem] = useState<StockItem | null>(null);
+  const [preparing, setPreparing] = useState(false);
+  const openPrepare = (i: StockItem) => {
+    setPrepareItem(i);
+    prepareRef.current?.present();
+  };
+  const confirmPrepare = async () => {
+    if (!prepareItem) return;
+    setPreparing(true);
+    try {
+      await axiosInstance.post(`/stock-items/${prepareItem.id}/confirm-reserve`);
+      refreshAll();
+      prepareRef.current?.dismiss();
+      setPrepareItem(null);
+      Alert.alert("Done", "Prepared");
+    } catch (err) {
+      const msg = (err as { response?: { data?: { message?: string | string[] } } })
+        ?.response?.data?.message;
+      Alert.alert("Failed", Array.isArray(msg) ? msg.join(", ") : (msg ?? "Error"));
+    } finally {
+      setPreparing(false);
+    }
+  };
+  const renderPrepareBackdrop = useCallback(
+    (props: BottomSheetBackdropProps) => (
+      <BottomSheetBackdrop
+        {...props}
+        appearsOnIndex={0}
+        disappearsOnIndex={-1}
+        pressBehavior="close"
+      />
+    ),
+    [],
+  );
+
   const reverse = (id: string) =>
     Alert.alert("Reverse movement", "Post a compensating movement?", [
       { text: "Cancel", style: "cancel" },
@@ -182,6 +230,12 @@ export default function MyWarehouseScreen() {
 
   const forLabel = (order?: { orderNumber?: string } | null, stage?: { name?: string } | null) =>
     [order?.orderNumber, stage?.name].filter(Boolean).join(" · ") || "—";
+  // Who will pick the item up: the reserving stage's workers.
+  const recipients = (stage?: { workers?: Array<{ name?: string }> } | null) =>
+    (stage?.workers ?? [])
+      .map((w) => w.name)
+      .filter(Boolean)
+      .join(", ");
   const primaryBtn = (label: string, onPress: () => void) => (
     <Pressable
       onPress={onPress}
@@ -197,11 +251,15 @@ export default function MyWarehouseScreen() {
     main: string,
     sub: string,
     right: React.ReactNode,
+    extra?: string,
   ) => (
     <View key={key} className="flex-row items-center justify-between gap-2 border-t border-border p-3 first:border-0">
       <View className="flex-1 pr-2">
         <Text className="text-sm text-foreground" numberOfLines={1}>{main}</Text>
         <Text className="text-xs text-muted-foreground" numberOfLines={1}>{sub}</Text>
+        {extra ? (
+          <Text className="text-xs text-primary" numberOfLines={1}>{extra}</Text>
+        ) : null}
       </View>
       {right}
     </View>
@@ -264,7 +322,7 @@ export default function MyWarehouseScreen() {
                     i.id,
                     `${i.lot?.material?.code ?? "—"} · ${i.lot?.lotNumber ?? ""}`,
                     `${i.quantity} · ${forLabel(i.order, i.stage)}`,
-                    primaryBtn("Confirm", () => void post(`/stock-items/${i.id}/confirm-reserve`, "Prepared")),
+                    primaryBtn("Prepare", () => openPrepare(i)),
                   ),
                 )}
               </QueueCard>
@@ -279,6 +337,9 @@ export default function MyWarehouseScreen() {
                     isAdmin
                       ? primaryBtn("Deliver", () => void post(`/stock-items/${i.id}/deliver`, "Delivered"))
                       : scanHint,
+                    recipients(i.stage)
+                      ? `Teslim alacak: ${recipients(i.stage)}`
+                      : undefined,
                   ),
                 )}
               </QueueCard>
@@ -313,6 +374,9 @@ export default function MyWarehouseScreen() {
                     ) : (
                       scanHint
                     ),
+                    recipients(r.stage)
+                      ? `Teslim alacak: ${recipients(r.stage)}`
+                      : undefined,
                   ),
                 )}
               </QueueCard>
@@ -416,6 +480,88 @@ export default function MyWarehouseScreen() {
           </>
         )}
       </ScrollView>
+
+      {/* ---- Prepare material sheet (reserving → reserved) ---- */}
+      <BottomSheetModal
+        ref={prepareRef}
+        enableDynamicSizing
+        backdropComponent={renderPrepareBackdrop}
+        backgroundStyle={{ backgroundColor: colors.card }}
+        handleIndicatorStyle={{ backgroundColor: colors.mutedForeground }}
+        onDismiss={() => {
+          if (!preparing) setPrepareItem(null);
+        }}
+      >
+        <BottomSheetView>
+          <SafeAreaView edges={["bottom"]}>
+            <View className="gap-1 px-4 pb-4 pt-2">
+              <Text className="pb-2 font-sans-semibold text-base text-card-foreground">
+                Prepare material
+              </Text>
+              {(() => {
+                const p =
+                  prepareItem?.lot?.project ?? prepareItem?.rack?.zone?.project;
+                const row = (label: string, value?: string | null) => (
+                  <View className="flex-row items-start justify-between gap-3 border-b border-border py-2">
+                    <Text className="text-xs text-muted-foreground">{label}</Text>
+                    <Text
+                      className="flex-1 text-right text-sm text-foreground"
+                      numberOfLines={2}
+                    >
+                      {value || "—"}
+                    </Text>
+                  </View>
+                );
+                return (
+                  <>
+                    {row(
+                      "Material",
+                      prepareItem?.lot?.material
+                        ? [
+                            prepareItem.lot.material.code,
+                            prepareItem.lot.material.name,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")
+                        : null,
+                    )}
+                    {row("Lot", prepareItem?.lot?.lotNumber)}
+                    {row(
+                      "Quantity",
+                      prepareItem?.quantity != null
+                        ? String(prepareItem.quantity)
+                        : null,
+                    )}
+                    {row("Project", p ? [p.code, p.name].filter(Boolean).join(" · ") : null)}
+                    {row("Order", prepareItem?.order?.orderNumber)}
+                    {row("Stage", prepareItem?.stage?.name)}
+                    {row("Teslim alacak", recipients(prepareItem?.stage))}
+                    {row(
+                      "Location",
+                      [
+                        prepareItem?.warehouse?.code,
+                        prepareItem?.rack?.zone?.code,
+                        prepareItem?.rack?.code,
+                      ]
+                        .filter(Boolean)
+                        .join(" / "),
+                    )}
+                  </>
+                );
+              })()}
+              <Text className="pb-2 pt-2 text-xs text-muted-foreground">
+                Malzemeyi hazırladıktan sonra Confirm ile onaylayın.
+              </Text>
+              <Button
+                size="lg"
+                label={preparing ? "Confirming…" : "Confirm"}
+                disabled={preparing}
+                onPress={() => void confirmPrepare()}
+              />
+            </View>
+          </SafeAreaView>
+        </BottomSheetView>
+      </BottomSheetModal>
     </Screen>
   );
 }

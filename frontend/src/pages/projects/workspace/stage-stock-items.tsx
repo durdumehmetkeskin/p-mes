@@ -53,11 +53,15 @@ export function StageStockItems({
   stageId,
   orderId,
   canAssign = false,
+  canHandle = false,
 }: {
   stageId: string;
   orderId?: string;
   /** Stage/process responsible or admin — may assign/unassign pool stock. */
   canAssign?: boolean;
+  /** Stage workers (+ responsible/admin) — may return or consume a DELIVERED
+   *  item; both are required before the stage can complete. */
+  canHandle?: boolean;
 }) {
   const apiUrl = useApiUrl();
   const { open } = useNotification();
@@ -125,6 +129,23 @@ export function StageStockItems({
       const msg =
         (e as { response?: { data?: { message?: string } } })?.response?.data
           ?.message ?? "Unassign failed";
+      open?.({ type: "error", message: String(msg) });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  // Delivered-item exits before completion: return the leftover to the
+  // warehouse, or mark the whole quantity consumed at this stage.
+  const handle = async (id: string, verb: "return" | "consume-delivered") => {
+    setBusyId(id);
+    try {
+      await axiosInstance.post(`/stock-items/${id}/${verb}`);
+      await refreshBoth();
+    } catch (e) {
+      const msg =
+        (e as { response?: { data?: { message?: string } } })?.response?.data
+          ?.message ?? "Action failed";
       open?.({ type: "error", message: String(msg) });
     } finally {
       setBusyId(null);
@@ -204,6 +225,38 @@ export function StageStockItems({
                             <Undo2 className="h-3.5 w-3.5" />
                           </Button>
                         )}
+                      {canHandle && it.status === "delivered" && (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-6 px-2 text-xs"
+                            disabled={busyId === it.id}
+                            title="Return the leftover to the warehouse"
+                            onClick={() => void handle(it.id, "return")}
+                          >
+                            Return
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-6 px-2 text-xs"
+                            disabled={busyId === it.id}
+                            title="Mark the whole quantity consumed at this stage"
+                            onClick={() => {
+                              if (
+                                window.confirm(
+                                  "Malzemenin tamamı bu aşamada kullanıldı olarak kaydedilecek. Emin misiniz?",
+                                )
+                              ) {
+                                void handle(it.id, "consume-delivered");
+                              }
+                            }}
+                          >
+                            Consumed
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </div>
                   <div className="text-xs text-muted-foreground">

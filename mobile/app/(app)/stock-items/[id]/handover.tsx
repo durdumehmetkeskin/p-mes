@@ -34,7 +34,11 @@ interface StockItem extends BaseRecord {
     } | null;
   } | null;
   order?: { orderNumber?: string } | null;
-  stage?: { name?: string; status?: string } | null;
+  stage?: {
+    name?: string;
+    status?: string;
+    workers?: Array<{ name?: string }>;
+  } | null;
 }
 interface Rack extends BaseRecord {
   id: string;
@@ -43,8 +47,12 @@ interface Rack extends BaseRecord {
 }
 
 export default function StockItemHandoverScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, scanned } = useLocalSearchParams<{ id: string; scanned?: string }>();
   const itemId = id as string;
+  // Reached via QR scan → the scanner is physically at the material, so the
+  // direct Receive (custody) action is unlocked. From a notification/list the
+  // user must scan the item's QR first.
+  const viaScan = scanned === "1";
   const router = useRouter();
   const invalidate = useInvalidate();
   const [busy, setBusy] = useState(false);
@@ -86,7 +94,7 @@ export default function StockItemHandoverScreen() {
     Alert.alert("Failed", Array.isArray(msg) ? msg.join(", ") : (msg ?? "Error"));
   };
 
-  const run = (verb: "deliver" | "receive" | "return") => {
+  const run = (verb: "deliver" | "receive" | "return" | "consume-delivered") => {
     setBusy(true);
     axiosInstance
       .post(`/stock-items/${itemId}/${verb}`)
@@ -125,7 +133,6 @@ export default function StockItemHandoverScreen() {
   };
 
   const unit = item?.lot?.material?.materialUnit?.name ?? "";
-  const stageDone = item?.stage?.status === "completed";
 
   return (
     <Screen title="Handover" subtitle={item?.lot?.material?.name} canGoBack>
@@ -165,28 +172,84 @@ export default function StockItemHandoverScreen() {
             <FieldRow label="Quantity" value={String(item.quantity ?? 0)} mono />
             <FieldRow label="Order" value={item.order?.orderNumber} />
             <FieldRow label="Stage" value={item.stage?.name} />
+            <FieldRow
+              label="Teslim alacak"
+              value={
+                (item.stage?.workers ?? [])
+                  .map((w) => w.name)
+                  .filter(Boolean)
+                  .join(", ") || undefined
+              }
+            />
           </View>
 
           {status === "reserved" ? (
-            <Button
-              label="Deliver to stage"
-              disabled={busy}
-              onPress={() => run("deliver")}
-            />
+            <View className="gap-2">
+              {viaScan ? (
+                <Button
+                  label="Teslim al (zimmetine geçer)"
+                  disabled={busy}
+                  onPress={() => run("receive")}
+                />
+              ) : (
+                <Button
+                  label="Teslim al — QR okut"
+                  disabled={busy}
+                  onPress={() => router.push("/scan")}
+                />
+              )}
+              <Button
+                variant="outline"
+                label="Deliver to stage"
+                disabled={busy}
+                onPress={() => run("deliver")}
+              />
+            </View>
           ) : status === "delivering" ? (
-            <Button label="Receive" disabled={busy} onPress={() => run("receive")} />
+            viaScan ? (
+              <Button
+                label="Teslim al (zimmetine geçer)"
+                disabled={busy}
+                onPress={() => run("receive")}
+              />
+            ) : (
+              <Button
+                label="Teslim al — QR okut"
+                disabled={busy}
+                onPress={() => router.push("/scan")}
+              />
+            )
           ) : status === "delivered" ? (
-            stageDone ? (
+            <View className="gap-2">
+              <Text className="text-xs text-muted-foreground">
+                Aşama tamamlanmadan önce kalan malzemeyi iade edin ya da tamamı
+                kullanıldıysa tüketildi olarak işaretleyin.
+              </Text>
               <Button
                 label="Return leftover to warehouse"
                 disabled={busy}
                 onPress={() => run("return")}
               />
-            ) : (
-              <Text className="text-sm text-muted-foreground">
-                The stage must be completed before returning leftover material.
-              </Text>
-            )
+              <Button
+                variant="outline"
+                label="Tümü tüketildi"
+                disabled={busy}
+                onPress={() =>
+                  Alert.alert(
+                    "Tüketildi olarak işaretle",
+                    "Malzemenin tamamı bu aşamada kullanıldı olarak kaydedilecek. Emin misiniz?",
+                    [
+                      { text: "Vazgeç", style: "cancel" },
+                      {
+                        text: "Tüketildi",
+                        style: "destructive",
+                        onPress: () => run("consume-delivered"),
+                      },
+                    ],
+                  )
+                }
+              />
+            </View>
           ) : status === "returning" ? (
             <View className="gap-3 rounded-lg border border-border bg-card p-4">
               <SectionLabel>Re-receive to warehouse</SectionLabel>

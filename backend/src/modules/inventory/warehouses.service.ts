@@ -11,6 +11,10 @@ import {
 import { CreateWarehouseDto } from './dto/create-warehouse.dto';
 import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
 import { Warehouse } from './entities/warehouse.entity';
+import {
+  WarehouseScopeService,
+  type WarehouseScope,
+} from './warehouse-scope.service';
 import { WarehousesRepository } from './warehouses.repository';
 
 @Injectable()
@@ -46,14 +50,25 @@ export class WarehousesService {
     sort: keyof Warehouse;
     order: 'ASC' | 'DESC';
     q?: string;
+    scope?: WarehouseScope;
   }): Promise<[Warehouse[], number]> {
-    return this.warehousesRepository.findAndCount(options);
+    const { scope, ...rest } = options;
+    const ids = scope === undefined || scope === 'ALL' ? undefined : scope;
+    if (ids && ids.length === 0) {
+      return Promise.resolve([[], 0]);
+    }
+    return this.warehousesRepository.findAndCount({ ...rest, ids });
   }
 
-  async findOne(id: string): Promise<Warehouse> {
+  // `scope` is only passed from the controller; internal callers (zones,
+  // stock-items, transactions) validate existence without a scope check.
+  async findOne(id: string, scope?: WarehouseScope): Promise<Warehouse> {
     const warehouse = await this.warehousesRepository.findById(id);
     if (!warehouse) {
       throw new NotFoundException(`Warehouse ${id} not found`);
+    }
+    if (scope !== undefined) {
+      WarehouseScopeService.assertInScope(scope, warehouse.id);
     }
     return warehouse;
   }

@@ -236,8 +236,7 @@ export class WorkflowTemplatesService {
     links?: WorkflowTemplateLinkInputDto[],
   ): Promise<void> {
     const effectiveLinks: WorkflowTemplateLinkInputDto[] =
-      links ??
-      stages.slice(1).map((_, i) => ({ from: i, to: i + 1 }));
+      links ?? stages.slice(1).map((_, i) => ({ from: i, to: i + 1 }));
 
     const keys = stages.map((_, i) => String(i));
     const edges = effectiveLinks.map((l) => ({

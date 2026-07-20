@@ -19,6 +19,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -60,7 +61,7 @@ interface StockItem {
     zone: { code: string; project: { code: string; name: string } | null } | null;
   } | null;
   order: { orderNumber: string } | null;
-  stage: { name: string } | null;
+  stage: { name: string; workers?: Array<{ name?: string }> } | null;
   lot: {
     lotNumber: string;
     material: { code: string; name: string } | null;
@@ -76,7 +77,11 @@ interface ToolReservation {
   /** False while the tool is in use / mid-handover elsewhere — hide Deliver. */
   deliverable?: boolean;
   tool: { id: string; code: string; name: string } | null;
-  stage: { name: string; status: string } | null;
+  stage: {
+    name: string;
+    status: string;
+    workers?: Array<{ name?: string }>;
+  } | null;
   order: { orderNumber: string } | null;
   project: { code: string; name: string } | null;
 }
@@ -100,6 +105,12 @@ interface MovementRow {
 const REFRESH = ["stock-items", "inventory-balances", "tools", "lots"];
 const loc = (wh?: string | null, zone?: string | null, rack?: string | null) =>
   [wh, zone, rack].filter(Boolean).join(" / ") || "—";
+// Who will pick the item up: the reserving stage's workers.
+const recipients = (stage?: { workers?: Array<{ name?: string }> } | null) =>
+  (stage?.workers ?? [])
+    .map((w) => w.name)
+    .filter(Boolean)
+    .join(", ");
 
 export const MyWarehouse = () => {
   const { open: notify } = useNotification();
@@ -110,6 +121,10 @@ export const MyWarehouse = () => {
     responsibleWarehouseIds: string[];
   } | null>(null);
   const [detail, setDetail] = useState<StockItem | null>(null);
+  // "Prepare" flow: the modal stays open while the responsible physically
+  // prepares the material; Confirm inside it fires confirm-reserve.
+  const [prepareItem, setPrepareItem] = useState<StockItem | null>(null);
+  const [preparing, setPreparing] = useState(false);
 
   useEffect(() => {
     void getWarehouseAccess().then(setAccess);
@@ -175,15 +190,28 @@ export const MyWarehouse = () => {
     void toolResvQuery.refetch();
   };
 
-  const act = async (url: string, okMsg: string) => {
+  const act = async (url: string, okMsg: string): Promise<boolean> => {
     try {
       await axiosInstance.post(url);
       notify?.({ type: "success", message: okMsg });
       refreshAll();
+      return true;
     } catch (err) {
       const msg = (err as AxiosError<{ message?: string | string[] }>)?.response?.data?.message;
       notify?.({ type: "error", message: Array.isArray(msg) ? msg.join(", ") : (msg ?? "Error") });
+      return false;
     }
+  };
+
+  const confirmPrepare = async () => {
+    if (!prepareItem) return;
+    setPreparing(true);
+    const ok = await act(
+      `/stock-items/${prepareItem.id}/confirm-reserve`,
+      "Prepared",
+    );
+    setPreparing(false);
+    if (ok) setPrepareItem(null);
   };
 
   const items = stock?.data ?? [];
@@ -260,8 +288,8 @@ export const MyWarehouse = () => {
                     main={matLabel(i)}
                     sub={`${i.quantity} · ${forLabel(i.order, i.stage)}`}
                     action={
-                      <Button size="sm" onClick={() => void act(`/stock-items/${i.id}/confirm-reserve`, "Prepared")}>
-                        Confirm
+                      <Button size="sm" onClick={() => setPrepareItem(i)}>
+                        Prepare
                       </Button>
                     }
                   />
@@ -276,6 +304,11 @@ export const MyWarehouse = () => {
                     key={i.id}
                     main={matLabel(i)}
                     sub={`${i.quantity} · ${forLabel(i.order, i.stage)}`}
+                    extra={
+                      recipients(i.stage)
+                        ? `Teslim alacak: ${recipients(i.stage)}`
+                        : undefined
+                    }
                     action={
                       isAdmin ? (
                         <Button size="sm" onClick={() => void act(`/stock-items/${i.id}/deliver`, "Delivered")}>
@@ -319,6 +352,11 @@ export const MyWarehouse = () => {
                     key={r.id}
                     main={`${r.tool?.code ?? "—"} · ${r.tool?.name ?? ""}`}
                     sub={forLabel(r.order, r.stage)}
+                    extra={
+                      recipients(r.stage)
+                        ? `Teslim alacak: ${recipients(r.stage)}`
+                        : undefined
+                    }
                     action={
                       r.deliverable === false ? (
                         <span className="text-xs text-muted-foreground">
@@ -510,6 +548,74 @@ export const MyWarehouse = () => {
         </Tabs>
       )}
 
+      {/* ---- Prepare material (reserving → reserved) ---- */}
+      <Dialog
+        open={!!prepareItem}
+        onOpenChange={(o) => {
+          if (!o && !preparing) setPrepareItem(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Prepare material</DialogTitle>
+          </DialogHeader>
+          {prepareItem ? (
+            <div className="flex flex-col gap-2 text-sm">
+              <DetailRow
+                label="Material"
+                value={
+                  prepareItem.lot?.material
+                    ? `${prepareItem.lot.material.code} · ${prepareItem.lot.material.name}`
+                    : "—"
+                }
+              />
+              <DetailRow label="Lot" value={prepareItem.lot?.lotNumber ?? "—"} />
+              <DetailRow label="Quantity" value={`${prepareItem.quantity}`} />
+              <DetailRow
+                label="Project"
+                value={(() => {
+                  const p =
+                    prepareItem.lot?.project ?? prepareItem.rack?.zone?.project;
+                  return p ? `${p.code} · ${p.name}` : "—";
+                })()}
+              />
+              <DetailRow
+                label="Order"
+                value={prepareItem.order?.orderNumber ?? "—"}
+              />
+              <DetailRow label="Stage" value={prepareItem.stage?.name ?? "—"} />
+              <DetailRow
+                label="Teslim alacak"
+                value={recipients(prepareItem.stage) || "—"}
+              />
+              <DetailRow
+                label="Location"
+                value={loc(
+                  prepareItem.warehouse?.code,
+                  prepareItem.rack?.zone?.code,
+                  prepareItem.rack?.code,
+                )}
+              />
+              <p className="pt-1 text-xs text-muted-foreground">
+                Malzemeyi hazırladıktan sonra Confirm ile onaylayın.
+              </p>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={preparing}
+              onClick={() => setPrepareItem(null)}
+            >
+              Cancel
+            </Button>
+            <Button disabled={preparing} onClick={() => void confirmPrepare()}>
+              {preparing ? "Confirming…" : "Confirm"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* ---- Stock item detail ---- */}
       <Dialog open={!!detail} onOpenChange={(o) => !o && setDetail(null)}>
         <DialogContent>
@@ -550,10 +656,13 @@ function QueueCard({ title, children }: { title: string; children: React.ReactNo
 function QueueRow({
   main,
   sub,
+  extra,
   action,
 }: {
   main: string;
   sub: string;
+  /** Optional third line (e.g. "Teslim alacak: …"). */
+  extra?: string;
   action: React.ReactNode;
 }) {
   return (
@@ -561,6 +670,9 @@ function QueueRow({
       <div className="min-w-0">
         <div className="truncate text-sm">{main}</div>
         <div className="truncate text-xs text-muted-foreground">{sub}</div>
+        {extra ? (
+          <div className="truncate text-xs text-primary">{extra}</div>
+        ) : null}
       </div>
       {action}
     </div>

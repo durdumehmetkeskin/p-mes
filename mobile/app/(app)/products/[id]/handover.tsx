@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Alert, ScrollView, Text, View } from "react-native";
 import { type BaseRecord, useList, useOne } from "@refinedev/core";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 
 import { FieldRow, SectionLabel } from "@/components/refine-ui/field-row";
 import { Screen } from "@/components/refine-ui/screen";
@@ -30,6 +30,10 @@ interface Product extends BaseRecord {
   } | null;
   deliveredByUser?: { name?: string } | null;
   receivedByUser?: { name?: string } | null;
+  consumedByStageId?: string | null;
+  consumedByStage?: { name?: string } | null;
+  inputReceivedByUser?: { name?: string } | null;
+  inputReceivedAt?: string | null;
 }
 interface StorageRackRow extends BaseRecord {
   id: string;
@@ -43,8 +47,15 @@ interface StorageRackRow extends BaseRecord {
  * responsible in the loop).
  */
 export default function ProductHandoverScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, scanned } = useLocalSearchParams<{
+    id: string;
+    scanned?: string;
+  }>();
   const productId = id as string;
+  const router = useRouter();
+  // Reached via QR scan → physical presence proven, the direct input-receive
+  // (custody) action is unlocked (same rule as stock-item handover).
+  const viaScan = scanned === "1";
   const [busy, setBusy] = useState(false);
   const [rackId, setRackId] = useState<string | null>(null);
 
@@ -71,19 +82,28 @@ export default function ProductHandoverScreen() {
       .join(" · "),
   }));
 
+  const fail = (err: { response?: { data?: { message?: string | string[] } } }) => {
+    const msg = err?.response?.data?.message;
+    Alert.alert("Failed", Array.isArray(msg) ? msg.join(", ") : (msg ?? "Error"));
+  };
+
   const store = () => {
     if (!rackId) return;
     setBusy(true);
     axiosInstance
       .post(`/products/${productId}/store`, { storageRackId: rackId })
       .then(() => query.refetch())
-      .catch((err: { response?: { data?: { message?: string | string[] } } }) => {
-        const msg = err?.response?.data?.message;
-        Alert.alert(
-          "Failed",
-          Array.isArray(msg) ? msg.join(", ") : (msg ?? "Error"),
-        );
-      })
+      .catch(fail)
+      .finally(() => setBusy(false));
+  };
+
+  // A worker of the CONSUMING stage takes custody of the input product.
+  const receiveInput = () => {
+    setBusy(true);
+    axiosInstance
+      .post(`/products/${productId}/receive-input`)
+      .then(() => query.refetch())
+      .catch(fail)
       .finally(() => setBusy(false));
   };
 
@@ -135,7 +155,50 @@ export default function ProductHandoverScreen() {
             {product.receivedByUser?.name ? (
               <FieldRow label="Stored by" value={product.receivedByUser.name} />
             ) : null}
+            {product.consumedByStage?.name ? (
+              <FieldRow
+                label="Input for stage"
+                value={product.consumedByStage.name}
+              />
+            ) : null}
           </View>
+
+          {/* Input pickup: a worker of the CONSUMING stage takes custody —
+              unlocked by scanning the product QR (backend mirrors with 403). */}
+          {product.consumedByStageId ? (
+            product.inputReceivedAt ? (
+              <View className="rounded-lg border border-border bg-card p-4">
+                <FieldRow
+                  label="Teslim alan"
+                  value={product.inputReceivedByUser?.name ?? "—"}
+                />
+                <FieldRow
+                  label="Teslim tarihi"
+                  value={new Date(product.inputReceivedAt).toLocaleString()}
+                />
+              </View>
+            ) : (
+              <View className="gap-2 rounded-lg border border-border bg-card p-4">
+                <Text className="text-xs text-muted-foreground">
+                  Bu ürün "{product.consumedByStage?.name ?? "aşama"}" girdisi —
+                  aşama çalışanı teslim almalı.
+                </Text>
+                {viaScan ? (
+                  <Button
+                    label="Teslim al (zimmetine geçer)"
+                    disabled={busy}
+                    onPress={receiveInput}
+                  />
+                ) : (
+                  <Button
+                    label="Teslim al — QR okut"
+                    disabled={busy}
+                    onPress={() => router.push("/scan")}
+                  />
+                )}
+              </View>
+            )
+          ) : null}
 
           {canStore ? (
             <View className="gap-3 rounded-lg border border-border bg-card p-4">

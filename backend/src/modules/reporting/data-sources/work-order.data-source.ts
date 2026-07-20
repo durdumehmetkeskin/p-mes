@@ -95,8 +95,7 @@ export class WorkOrderDataSource implements ReportDataSourceProvider {
           input: s.input,
           output: s.output,
           status: s.status,
-          responsible:
-            (s.workers ?? []).map((w) => w.name).join(', ') || null,
+          responsible: (s.workers ?? []).map((w) => w.name).join(', ') || null,
           startedAt: s.startedAt,
           completedAt: s.completedAt,
           durationHours: s.durationHours,

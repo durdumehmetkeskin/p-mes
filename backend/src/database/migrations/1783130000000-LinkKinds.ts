@@ -67,7 +67,11 @@ export class LinkKinds1783130000000 implements MigrationInterface {
     );
     for (const [table, uq, chk] of [
       ['process_stage_links', 'UQ_ps_link_pair', 'CHK_ps_link_kind'],
-      ['workflow_template_stage_links', 'UQ_wts_link_pair', 'CHK_wts_link_kind'],
+      [
+        'workflow_template_stage_links',
+        'UQ_wts_link_pair',
+        'CHK_wts_link_kind',
+      ],
     ] as const) {
       await queryRunner.query(
         `ALTER TABLE "${table}" DROP CONSTRAINT IF EXISTS "${uq}"`,

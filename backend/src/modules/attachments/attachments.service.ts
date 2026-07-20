@@ -129,9 +129,7 @@ export class AttachmentsService {
     }
     if (!user || ProjectsService.isAdmin(user)) return;
     const projectId = await this.resolveProjectId(ownerType, ownerId);
-    const project = projectId
-      ? await this.projects.findOne(projectId)
-      : null;
+    const project = projectId ? await this.projects.findOne(projectId) : null;
     if (project?.managerUserId !== user.id) {
       throw new ForbiddenException(
         'Bu dosyaları yalnızca proje yöneticisi veya admin yönetebilir.',

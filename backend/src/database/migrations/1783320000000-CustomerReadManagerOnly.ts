@@ -8,9 +8,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * routes (/projects/:id/customer, /customer-options, /contacts) that are
  * relationship-authorized in the service instead of key-gated.
  */
-export class CustomerReadManagerOnly1783320000000
-  implements MigrationInterface
-{
+export class CustomerReadManagerOnly1783320000000 implements MigrationInterface {
   name = 'CustomerReadManagerOnly1783320000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

@@ -163,5 +163,4 @@ export class MaterialsService {
     }
     await this.materialsRepository.softRemove(material);
   }
-
 }

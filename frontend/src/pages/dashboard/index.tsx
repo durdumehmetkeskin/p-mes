@@ -18,6 +18,7 @@ import { StatusBadge } from "@/components/refine-ui/status-badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAccessState } from "@/hooks/use-access-state";
 import { cn } from "@/lib/utils";
+import { CheckoutCards, useMyCheckouts } from "./my-checkouts";
 import { WorkerDashboard } from "./worker-dashboard";
 
 interface Identity {
@@ -85,6 +86,12 @@ export const Dashboard = () => {
 
 const AdminDashboard = () => {
   const { data: identity } = useGetIdentity<Identity>();
+  // Admins can receive/scan too — surface their own custody when non-empty.
+  const {
+    stockItems: myStockItems,
+    tools: myTools,
+    products: myProducts,
+  } = useMyCheckouts();
 
   const materials = useTotal("materials");
   const openOrders = useTotal("orders");
@@ -164,6 +171,17 @@ const AdminDashboard = () => {
           to="/materials"
         />
       </section>
+
+      {/* Own custody (zimmet) — anyone who received something must see it. */}
+      {(myStockItems.length > 0 ||
+        myTools.length > 0 ||
+        myProducts.length > 0) && (
+        <CheckoutCards
+          stockItems={myStockItems}
+          tools={myTools}
+          products={myProducts}
+        />
+      )}
 
       {/* Live grid + audit feed */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">

@@ -68,7 +68,7 @@ export class OrdersController {
   @RequirePermissions('orders:read')
   @Get(':id/stock-items')
   @ApiOperation({
-    summary: "Stock reserved for the order but not yet assigned to a stage",
+    summary: 'Stock reserved for the order but not yet assigned to a stage',
   })
   poolStockItems(
     @Param('id', ParseUUIDPipe) id: string,

@@ -7,14 +7,13 @@ import {
   useOne,
 } from "@refinedev/core";
 import { type FieldValues, useForm } from "react-hook-form";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { toast } from "sonner-native";
 
-import { Can } from "@/components/can";
 import { FieldRow, SectionLabel } from "@/components/refine-ui/field-row";
 import {
+  CheckboxGroupField,
   NumberField,
-  SelectField,
   TextAreaField,
   TextField,
 } from "@/components/refine-ui/form";
@@ -47,7 +46,7 @@ interface Stage extends BaseRecord {
   estimatedStartDate?: string;
   estimatedCompletedDate?: string;
   estimatedDurationHours?: number;
-  workers?: Array<{ id: string }>;
+  workers?: Array<{ id: string; name?: string }>;
 }
 interface Process extends BaseRecord {
   id: string;
@@ -62,6 +61,7 @@ export default function StageDetailScreen() {
     stageId: string;
     processId: string;
   }>();
+  const router = useRouter();
   const invalidate = useInvalidate();
   const { query, result } = useOne<Process>({
     resource: "processes",
@@ -94,10 +94,14 @@ export default function StageDetailScreen() {
     stage?.startedAt?.slice(0, 10) ?? stage?.estimatedStartDate ?? null;
   const windowEnd =
     stage?.completedAt?.slice(0, 10) ?? stage?.estimatedCompletedDate ?? null;
-  const memberOptions = members.map((m) => ({
-    label: m.name ?? m.id,
-    value: m.id,
-  }));
+  // Worker candidates = project team, plus any already-assigned worker who has
+  // since left the team (so they stay visible and can be unchecked).
+  const workerOptions = [
+    ...members.map((m) => ({ label: m.name ?? m.id, value: m.id })),
+    ...(stage?.workers ?? [])
+      .filter((w) => !members.some((m) => m.id === w.id))
+      .map((w) => ({ label: w.name ?? w.id, value: w.id })),
+  ];
 
   const [savingInfo, setSavingInfo] = useState(false);
   const { control, handleSubmit } = useForm<FieldValues>({
@@ -108,6 +112,7 @@ export default function StageDetailScreen() {
       estimatedStartDate: stage?.estimatedStartDate ?? "",
       estimatedCompletedDate: stage?.estimatedCompletedDate ?? "",
       estimatedDurationHours: stage?.estimatedDurationHours,
+      workerIds: (stage?.workers ?? []).map((w) => w.id),
     },
   });
 
@@ -144,26 +149,20 @@ export default function StageDetailScreen() {
       });
       refetch();
       toast.success("Status updated");
-      // Completing with tools still on hand → remind about the QR return.
-      if (status === "completed") {
-        try {
-          const { data } = await axiosInstance.get<Array<{ status: string }>>(
-            `/process-stages/${stageId}/tool-reservations`,
-          );
-          const held = (Array.isArray(data) ? data : []).filter(
-            (r) => r.status === "received",
-          ).length;
-          if (held > 0) {
-            toast.warning(
-              `Kullanılan ${held} araç depoya iade edilmeli — QR ile iade edin.`,
-            );
-          }
-        } catch {
-          /* warning only */
-        }
+      // Prompt to record what the stage produced (mirrors the web
+      // stage-completion StageProductDialog; the screen is skippable).
+      // Tool/material return is enforced BEFORE completion by the backend.
+      if (status === "completed" && has("products:create")) {
+        router.push(`/products/new?stageId=${stageId}&prompted=1`);
       }
-    } catch {
-      toast.error("Could not change status");
+    } catch (err) {
+      // Surface the backend gate messages (teslim alınmadı / iade edilmeli…).
+      const msg = (
+        err as { response?: { data?: { message?: string | string[] } } }
+      )?.response?.data?.message;
+      toast.error(
+        Array.isArray(msg) ? msg.join(", ") : (msg ?? "Could not change status"),
+      );
     }
   };
 
@@ -181,6 +180,7 @@ export default function StageDetailScreen() {
           typeof v.estimatedDurationHours === "number"
             ? v.estimatedDurationHours
             : undefined,
+        workerIds: Array.isArray(v.workerIds) ? v.workerIds : undefined,
       });
       refetch();
       toast.success("Stage saved");
@@ -287,7 +287,10 @@ export default function StageDetailScreen() {
             ) : null}
           </View>
 
-          {unlocked ? (
+          {/* Stage info is editable ONLY by the process responsible / admin
+              (PATCH is relationship-authorized). Workers get a read-only view —
+              they may only start/complete and record outputs. */}
+          {unlocked && canStatusAll ? (
             <View className="rounded-lg border border-border bg-card p-4">
               <SectionLabel>Details</SectionLabel>
               <View className="mt-2 gap-4">
@@ -317,17 +320,61 @@ export default function StageDetailScreen() {
                   name="estimatedDurationHours"
                   label="Est. duration (h)"
                 />
-                <Can resource="process-stages" action="update">
-                  <Button label="Save stage" loading={savingInfo} onPress={saveInfo} />
-                </Can>
+                <CheckboxGroupField
+                  control={control}
+                  name="workerIds"
+                  label="Workers (team)"
+                  hint={
+                    workerOptions.length === 0
+                      ? "Önce proje ekibine kullanıcı ekleyin."
+                      : undefined
+                  }
+                  options={workerOptions}
+                />
+                <Button label="Save stage" loading={savingInfo} onPress={saveInfo} />
               </View>
             </View>
           ) : (
             <View className="rounded-lg border border-border bg-card p-4">
-              <FieldRow label="Note" value={stage.note} />
-              <Text className="mt-2 text-xs text-muted-foreground">
-                Complete earlier stages to edit this one.
-              </Text>
+              <SectionLabel>Details</SectionLabel>
+              <View className="mt-2">
+                <FieldRow label="Name" value={stage.name} />
+                <FieldRow
+                  label="Duration (h)"
+                  value={
+                    stage.durationHours != null
+                      ? String(stage.durationHours)
+                      : undefined
+                  }
+                />
+                <FieldRow label="Note" value={stage.note} />
+                <FieldRow label="Est. start" value={stage.estimatedStartDate} />
+                <FieldRow
+                  label="Est. completion"
+                  value={stage.estimatedCompletedDate}
+                />
+                <FieldRow
+                  label="Est. duration (h)"
+                  value={
+                    stage.estimatedDurationHours != null
+                      ? String(stage.estimatedDurationHours)
+                      : undefined
+                  }
+                />
+                <FieldRow
+                  label="Workers"
+                  value={
+                    (stage.workers ?? [])
+                      .map((w) => w.name ?? w.id)
+                      .join(", ") || undefined
+                  }
+                />
+              </View>
+              {!unlocked && canStatusAll ? (
+                <Text className="mt-2 text-xs text-muted-foreground">
+                  Complete earlier stages to edit this one.
+                </Text>
+              ) : null}
             </View>
           )}
 
@@ -341,7 +388,8 @@ export default function StageDetailScreen() {
           {status === "completed" ? (
             <CompletionReportCard
               endpoint={`/process-stages/${stageId}/completion-report`}
-              editable={has("process-stages:update")}
+              // Backend: stage workers, process responsible or admin.
+              editable={canStatusAll || canStatusWorker}
             />
           ) : null}
 
@@ -359,11 +407,21 @@ export default function StageDetailScreen() {
             windowEnd={windowEnd}
           />
 
-          {/* Stage documents: only this stage's workers, the process
-              responsible or an admin may add (backend mirrors with a 403). */}
+          {/* Generic stage documents — managed by the process responsible /
+              admin. Workers record their deliverables as OUTPUT documents. */}
           <AttachmentsPanel
             ownerType="stage"
             ownerId={stageId as string}
+            title="Documents"
+            canUpload={canStatusAll && has("attachments:create")}
+          />
+
+          {/* Output documents — the stage's workers (plus responsible/admin)
+              upload what the stage produced (backend mirrors with a 403). */}
+          <AttachmentsPanel
+            ownerType="stage_output"
+            ownerId={stageId as string}
+            title="Output documents"
             canUpload={(canStatusAll || canStatusWorker) && has("attachments:create")}
           />
 

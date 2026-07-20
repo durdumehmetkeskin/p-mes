@@ -163,6 +163,19 @@ export class Product extends BaseEntity {
   @Column({ type: 'timestamptz', name: 'received_at', nullable: true })
   receivedAt: Date | null;
 
+  // INPUT custody: when the product is consumed by a stage, a worker of THAT
+  // stage picks it up (QR scan) — separate from the storage drop-off fields
+  // above, which a consumed product may already carry.
+  @ManyToOne(() => User, { eager: true, nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'input_received_by_user_id' })
+  inputReceivedByUser: User | null;
+
+  @Column({ type: 'uuid', name: 'input_received_by_user_id', nullable: true })
+  inputReceivedByUserId: string | null;
+
+  @Column({ type: 'timestamptz', name: 'input_received_at', nullable: true })
+  inputReceivedAt: Date | null;
+
   // MinIO key of the product's ONE persistent QR PNG (generated once at
   // creation — every later request serves this same image).
   @Column({

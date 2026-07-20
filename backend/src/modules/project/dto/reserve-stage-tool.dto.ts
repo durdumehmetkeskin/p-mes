@@ -1,4 +1,10 @@
-import { IsISO8601, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import {
+  IsISO8601,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+} from 'class-validator';
 
 /** Reserve a tool for a process stage over a datetime range. */
 export class ReserveStageToolDto {

@@ -5,9 +5,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * from the stage dialog remember their stage so the UI can find and prefill
  * them. Existing reservations stay stage-less (no backfill).
  */
-export class SectionReservationStage1783060000000
-  implements MigrationInterface
-{
+export class SectionReservationStage1783060000000 implements MigrationInterface {
   name = 'SectionReservationStage1783060000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

@@ -99,13 +99,7 @@ export class DeadlineScannerService {
       const link = order
         ? `/projects/${order.projectId}/orders/${p.orderItem.orderId}`
         : '/board';
-      await emit(
-        p.estimatedCompletedDate,
-        'process',
-        p.id,
-        'Süreç',
-        link,
-      );
+      await emit(p.estimatedCompletedDate, 'process', p.id, 'Süreç', link);
     }
 
     // Projects (skip inactive).

@@ -14,7 +14,6 @@ import { Order } from '../project/entities/order.entity';
 import { Process } from '../project/entities/process.entity';
 import { ProcessStage } from '../project/entities/process-stage.entity';
 import { Project } from '../project/entities/project.entity';
-import { ProcessStageStatus } from '../project/enums/process-stage-status.enum';
 import { User } from '../users/entities/user.entity';
 import { QrService } from '../qr/qr.service';
 import { QrResult } from '../qr/qr.types';
@@ -277,6 +276,38 @@ export class StockItemsService {
   }
 
   /**
+   * Single-item read for the GET :id route. Key holders / admins / warehouse
+   * responsibles see any in-scope item; additionally the item's STAGE workers
+   * and the owning process responsible may read an item bound to their stage —
+   * the QR handover screen needs this detail without any stock permission key
+   * (mirrors the keyless `receive` authorization). Everyone else gets 404.
+   */
+  async findOneForUser(id: string, user: User): Promise<StockItem> {
+    const item = await this.findOne(id, 'ALL');
+    const scope = WarehouseScopeService.resolveScope(user, 'stock-items:read');
+    if (
+      scope === 'ALL' ||
+      (item.warehouseId && scope.includes(item.warehouseId))
+    ) {
+      return item;
+    }
+    if (item.stage) {
+      if ((item.stage.workers ?? []).some((w) => w.id === user.id)) {
+        return item;
+      }
+      const process = item.stage.processId
+        ? await this.processes.findOne({
+            where: { id: item.stage.processId },
+          })
+        : null;
+      if (process?.responsibleUserId === user.id) {
+        return item;
+      }
+    }
+    throw new NotFoundException(`Stock item ${id} not found`);
+  }
+
+  /**
    * Reserve part (or all) of an available stock item for an order (+ optional
    * stage): decrement the source and split off a new `reserving` item (pending
    * physical preparation), then notify the warehouse responsible to prepare it.
@@ -509,10 +540,13 @@ export class StockItemsService {
     // tell the stage workers/process responsible it is ready for handover now.
     if (item.status === StockItemStatus.Reserved) {
       const material = item.lot?.material;
+      const location = [item.warehouse?.code, item.rack?.code]
+        .filter(Boolean)
+        .join(' / ');
       const input = {
         type: NotificationType.StockReserved,
         title: 'Malzeme hazır',
-        message: `${material?.code ?? ''} ${material?.name ?? ''}: ${quantity} adet "${stage.name}" için hazır — teslim alınabilir`,
+        message: `${material?.code ?? ''} ${material?.name ?? ''}: ${quantity} adet "${stage.name}" için hazır — ${location ? `${location} konumundan ` : ''}QR okutarak teslim alın`,
         link: `/lots/${item.lotId}`,
         entityType: 'stock-item',
         entityId: resultId,
@@ -730,10 +764,13 @@ export class StockItemsService {
     // Material prepared → alert the stage workers + the process responsible.
     if (item.stageId) {
       const material = item.lot?.material;
+      const location = [item.warehouse?.code, item.rack?.code]
+        .filter(Boolean)
+        .join(' / ');
       const input = {
         type: NotificationType.StockReserved,
         title: 'Malzeme hazır',
-        message: `${material?.code ?? ''} ${material?.name ?? ''}: ${item.quantity} adet "${item.stage?.name ?? 'aşama'}" için hazır — teslim alınabilir`,
+        message: `${material?.code ?? ''} ${material?.name ?? ''}: ${item.quantity} adet "${item.stage?.name ?? 'aşama'}" için hazır — ${location ? `${location} konumundan ` : ''}QR okutarak teslim alın`,
         link: `/lots/${item.lotId}`,
         entityType: 'stock-item',
         entityId: item.id,
@@ -777,15 +814,21 @@ export class StockItemsService {
   }
 
   /**
-   * A stage worker receives a handed-over item: mark it `delivered`, record
-   * the receiver + time, and post a `handover` movement to the ledger (who
-   * delivered/received + dates). Only a stage worker or an admin may.
+   * A stage worker receives an item: mark it `delivered`, record the receiver
+   * + time, and post a `handover` movement to the ledger (who delivered/
+   * received + dates). Only a stage worker or an admin may. Accepts both a
+   * `delivering` item (warehouse pressed Deliver first) and a still-`reserved`
+   * one — scanning the QR at the warehouse IS the physical handover, so the
+   * deliver step may be skipped (deliveredBy stays empty then).
    */
   async receive(id: string, user: User): Promise<StockItem> {
     const item = await this.findOne(id, 'ALL');
-    if (item.status !== StockItemStatus.Delivering) {
+    if (
+      item.status !== StockItemStatus.Delivering &&
+      item.status !== StockItemStatus.Reserved
+    ) {
       throw new BadRequestException(
-        'Only a delivering stock item can be received',
+        'Only a reserved or delivering stock item can be received',
       );
     }
     if (!item.stageId) {
@@ -802,6 +845,8 @@ export class StockItemsService {
       item.status = StockItemStatus.Delivered;
       item.receivedByUserId = user.id;
       item.receivedAt = new Date();
+      // Direct pickup (reserved → delivered without a deliver step).
+      if (!item.deliveredAt) item.deliveredAt = item.receivedAt;
       await manager.save(item);
 
       const tx = manager.create(InventoryTransaction, {
@@ -827,8 +872,9 @@ export class StockItemsService {
 
   /**
    * The stage hands leftover material back to the warehouse (scanned): mark the
-   * delivered item `returning` and record who returned it + when. Only allowed
-   * once the stage is completed. The warehouse responsible re-receives it next.
+   * delivered item `returning` and record who returned it + when. Returning
+   * happens BEFORE completion — the stage cannot complete while any delivered
+   * item is still on hand. The warehouse responsible re-receives it next.
    * Authorized for a stage worker or an admin (mirrors `receive`).
    */
   async returnToWarehouse(id: string, user: User): Promise<StockItem> {
@@ -840,11 +886,6 @@ export class StockItemsService {
     }
     if (!item.stageId) {
       throw new BadRequestException('This item is not bound to a stage');
-    }
-    if (item.stage?.status !== ProcessStageStatus.Completed) {
-      throw new BadRequestException(
-        'The stage must be completed before returning leftover material',
-      );
     }
     if (
       !WarehouseScopeService.isAdmin(user) &&
@@ -997,6 +1038,31 @@ export class StockItemsService {
 
     await this.stockAlert.check(item.lot.materialId);
     return this.findOne(availableId);
+  }
+
+  /**
+   * A stage worker marks a delivered item fully used ("tüketildi") — the way
+   * out of the completion gate when there is no leftover to return. Authz
+   * mirrors `receive`/`returnToWarehouse`: admin or a worker of the item's
+   * stage; delegates the actual mutation to `consume`.
+   */
+  async consumeDelivered(id: string, user: User): Promise<StockItem> {
+    const item = await this.findOne(id, 'ALL');
+    if (item.status !== StockItemStatus.Delivered) {
+      throw new BadRequestException(
+        'Only a delivered stock item can be consumed',
+      );
+    }
+    if (!item.stageId) {
+      throw new BadRequestException('This item is not bound to a stage');
+    }
+    if (
+      !WarehouseScopeService.isAdmin(user) &&
+      !(item.stage?.workers ?? []).some((w) => w.id === user.id)
+    ) {
+      throw new ForbiddenException('Only a stage worker can consume');
+    }
+    return this.consume(id, 'ALL', user);
   }
 
   /**

@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { StockItem } from '../inventory/entities/stock-item.entity';
 import { StockItemStatus } from '../inventory/enums/stock-item-status.enum';
+import { Product } from '../products/entities/product.entity';
 import type { User } from '../users/entities/user.entity';
 import { Process } from './entities/process.entity';
 import { StageToolReservation } from './entities/stage-tool-reservation.entity';
@@ -27,6 +28,17 @@ export interface MyToolView {
   status: string;
   receivedAt: Date | null;
   tool: { id: string; code: string; name: string } | null;
+  stageName: string | null;
+}
+
+export interface MyProductView {
+  id: string;
+  code: string;
+  name: string;
+  quantity: number;
+  unit: string | null;
+  receivedAt: Date | null;
+  /** The consuming stage the product was picked up for. */
   stageName: string | null;
 }
 
@@ -70,6 +82,8 @@ export class MyWorkService {
     private readonly toolReservations: Repository<StageToolReservation>,
     @InjectRepository(Process)
     private readonly processes: Repository<Process>,
+    @InjectRepository(Product)
+    private readonly products: Repository<Product>,
   ) {}
 
   /**
@@ -136,8 +150,9 @@ export class MyWorkService {
   async checkouts(user: User): Promise<{
     stockItems: MyStockItemView[];
     tools: MyToolView[];
+    products: MyProductView[];
   }> {
-    const [items, reservations] = await Promise.all([
+    const [items, reservations, inputProducts] = await Promise.all([
       this.stockItems.find({
         where: {
           receivedByUserId: user.id,
@@ -164,6 +179,18 @@ export class MyWorkService {
         loadEagerRelations: false,
         order: { receivedAt: 'DESC' },
       }),
+      // Input products the user picked up, while the consuming stage is still
+      // running — once it completes, the product is used up and drops off.
+      this.products
+        .createQueryBuilder('p')
+        .leftJoinAndSelect('p.materialUnit', 'mu')
+        .innerJoinAndSelect('p.consumedByStage', 'cs')
+        .where('p.input_received_by_user_id = :uid', { uid: user.id })
+        .andWhere('cs.status != :done', {
+          done: ProcessStageStatus.Completed,
+        })
+        .orderBy('p.input_received_at', 'DESC')
+        .getMany(),
     ]);
 
     return {
@@ -192,6 +219,15 @@ export class MyWorkService {
           ? { id: r.tool.id, code: r.tool.code, name: r.tool.name }
           : null,
         stageName: r.stage?.name ?? null,
+      })),
+      products: inputProducts.map((p) => ({
+        id: p.id,
+        code: p.code,
+        name: p.name,
+        quantity: p.quantity,
+        unit: p.materialUnit?.name ?? null,
+        receivedAt: p.inputReceivedAt,
+        stageName: p.consumedByStage?.name ?? null,
       })),
     };
   }

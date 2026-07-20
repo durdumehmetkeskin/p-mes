@@ -330,6 +330,58 @@ export class ProductsService {
     this.assertStageInputEditor(stage.process, user);
     product.consumedByStage = stage;
     await this.productsRepository.save(product);
+
+    // Tell the consuming stage's workers where to pick the input up.
+    const rack = product.storageRack;
+    const location = rack
+      ? [rack.storage?.location?.name, rack.code].filter(Boolean).join(' / ')
+      : '';
+    for (const worker of stage.workers ?? []) {
+      await this.notifications.notifyUser(
+        worker.id,
+        {
+          type: NotificationType.ProductInputReady,
+          title: 'Girdi ürünü hazır',
+          message: `${product.code} ${product.name}: "${stage.name}" girdisi — ${location ? `${location} konumundan ` : ''}QR okutarak teslim alın`,
+          link: `/products/${product.id}`,
+          entityType: 'product',
+          entityId: product.id,
+        },
+        user?.id,
+      );
+    }
+
+    return this.findOne(id, user);
+  }
+
+  /**
+   * A worker of the CONSUMING stage picks up an input product (QR scan):
+   * records input custody — separate from the storage drop-off fields, which
+   * the product may already carry. Admin or a worker of `consumedByStage` only.
+   */
+  async receiveInput(id: string, user: User): Promise<Product> {
+    const product = await this.findOne(id, user); // membership scoping
+    if (!product.consumedByStageId) {
+      throw new BadRequestException('Bu ürün bir aşamanın girdisi değil.');
+    }
+    if (product.inputReceivedAt) {
+      throw new BadRequestException('Bu ürün zaten teslim alınmış.');
+    }
+    const stage = await this.stages.findOne({
+      where: { id: product.consumedByStageId },
+    });
+    if (
+      !ProjectsService.isAdmin(user) &&
+      !(stage?.workers ?? []).some((w) => w.id === user.id)
+    ) {
+      throw new ForbiddenException(
+        'Girdi ürününü yalnızca o aşamanın çalışanı teslim alabilir.',
+      );
+    }
+    product.inputReceivedByUserId = user.id;
+    product.inputReceivedByUser = { id: user.id } as User;
+    product.inputReceivedAt = new Date();
+    await this.productsRepository.save(product);
     return this.findOne(id, user);
   }
 
@@ -341,11 +393,7 @@ export class ProductsService {
    * `produced` (or a legacy `delivering` row) → `received` in a single step;
    * the actor is recorded as both deliverer and receiver.
    */
-  async store(
-    id: string,
-    storageRackId: string,
-    user: User,
-  ): Promise<Product> {
+  async store(id: string, storageRackId: string, user: User): Promise<Product> {
     const product = await this.findOne(id, user); // project scoping = the gate
     if (product.handoverStatus === ProductHandoverStatus.Received) {
       throw new BadRequestException('Bu ürün zaten depoya bırakılmış.');
@@ -437,6 +485,10 @@ export class ProductsService {
     }
     product.consumedByStage = null;
     product.consumedByStageId = null;
+    // The input-custody record belongs to the released link.
+    product.inputReceivedByUser = null;
+    product.inputReceivedByUserId = null;
+    product.inputReceivedAt = null;
     await this.productsRepository.save(product);
     return this.findOne(id, user);
   }

@@ -86,7 +86,6 @@ export class InventoryToolingDataSource implements ReportDataSourceProvider {
       color: paletteColor(i),
     }));
 
-
     return {
       generatedAt: new Date().toISOString(),
       // Human label used to build the generated file name.

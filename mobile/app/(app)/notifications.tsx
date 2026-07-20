@@ -20,6 +20,8 @@ interface NotificationRow extends BaseRecord {
   message?: string;
   read?: boolean;
   link?: string | null;
+  entityType?: string | null;
+  entityId?: string | null;
   createdAt?: string;
 }
 
@@ -39,6 +41,17 @@ export default function NotificationsScreen() {
         { resource: "notifications", id: n.id, values: { read: true } },
         { onSuccess: refresh },
       );
+    }
+    // Stock-item / product notifications open the handover screen (details +
+    // pickup location + status-appropriate action) instead of the generic
+    // page the `link` points at (kept for the web SPA).
+    if (n.entityType === "stock-item" && n.entityId) {
+      router.push(`/stock-items/${n.entityId}/handover` as never);
+      return;
+    }
+    if (n.entityType === "product" && n.entityId) {
+      router.push(`/products/${n.entityId}/handover` as never);
+      return;
     }
     if (n.link) router.push(n.link as never);
   };

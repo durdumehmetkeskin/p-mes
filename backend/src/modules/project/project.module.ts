@@ -41,6 +41,7 @@ import { WorkflowTemplateStageLink } from './entities/workflow-template-stage-li
 import { WorkflowTemplate } from './entities/workflow-template.entity';
 import { User } from '../users/entities/user.entity';
 import { InventoryTransaction } from '../inventory/entities/inventory-transaction.entity';
+import { Product } from '../products/entities/product.entity';
 import { Lot } from '../inventory/entities/lot.entity';
 import { Material } from '../inventory/entities/material.entity';
 import { StockItem } from '../inventory/entities/stock-item.entity';
@@ -80,6 +81,8 @@ import { ProjectAllocationsService } from './project-allocations.service';
       ToolStatusHistory,
       StageToolReservation,
       InventoryTransaction,
+      // Read-only, for the "my checkouts" input-product custody view.
+      Product,
     ]),
     QrModule,
     CustomersModule,

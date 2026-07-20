@@ -17,11 +17,7 @@ import { ToolsService } from './tools.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([
-      Tool,
-      ToolType,
-      ToolStatusHistory,
-    ]),
+    TypeOrmModule.forFeature([Tool, ToolType, ToolStatusHistory]),
     InventoryModule,
     QrModule,
   ],

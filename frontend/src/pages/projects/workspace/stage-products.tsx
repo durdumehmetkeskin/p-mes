@@ -47,6 +47,8 @@ interface StageProduct {
   stage?: { id: string; name: string } | null;
   productType: { name: string } | null;
   materialUnit: { name: string } | null;
+  inputReceivedAt?: string | null;
+  inputReceivedByUser?: { name: string } | null;
 }
 
 type FormValues = Record<string, unknown>;
@@ -219,6 +221,7 @@ export function StageInputProductsPanel({
   predecessorStageIds = [],
   ioPredecessorStageIds = [],
   canEdit = false,
+  canReceive = false,
 }: {
   stageId: string;
   orderId?: string;
@@ -230,6 +233,8 @@ export function StageInputProductsPanel({
   /** Inputs are planned by the process responsible or an admin (backend
    *  mirrors with a 403); everyone else sees them read-only. */
   canEdit?: boolean;
+  /** Stage workers (+ responsible/admin) — may pick the input up (custody). */
+  canReceive?: boolean;
 }) {
   const apiUrl = useApiUrl();
   const { has } = usePermissions();
@@ -323,6 +328,17 @@ export function StageInputProductsPanel({
       {
         url: `${apiUrl}/products/${productId}/consume`,
         method: "delete",
+        values: {},
+      },
+      { onSuccess: refresh },
+    );
+
+  // A worker of THIS stage takes custody of the input product.
+  const receiveInput = (productId: string) =>
+    customMutate(
+      {
+        url: `${apiUrl}/products/${productId}/receive-input`,
+        method: "post",
         values: {},
       },
       { onSuccess: refresh },
@@ -433,6 +449,24 @@ export function StageInputProductsPanel({
                   {p.quantity}
                   {p.materialUnit?.name ? ` ${p.materialUnit.name}` : ""}
                 </span>
+                {p.inputReceivedAt ? (
+                  <span className="text-xs text-muted-foreground">
+                    Teslim alındı
+                    {p.inputReceivedByUser?.name
+                      ? `: ${p.inputReceivedByUser.name}`
+                      : ""}
+                  </span>
+                ) : canReceive ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-6 px-2 text-xs"
+                    title="Girdi ürünü teslim al (zimmetine geçer)"
+                    onClick={() => receiveInput(p.id)}
+                  >
+                    Teslim al
+                  </Button>
+                ) : null}
                 {canEdit && has("products:consume") && (
                   <Button
                     size="icon"

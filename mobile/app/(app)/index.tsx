@@ -138,6 +138,14 @@ interface MyTool {
   tool: { code: string; name: string } | null;
   stageName: string | null;
 }
+interface MyProduct {
+  id: string;
+  code: string;
+  name: string;
+  quantity: number;
+  unit: string | null;
+  stageName: string | null;
+}
 
 interface MyResponsibility {
   id: string;
@@ -168,6 +176,7 @@ function MyWork() {
   const [cards, setCards] = useState<StageCard[]>([]);
   const [stockItems, setStockItems] = useState<MyStockItem[]>([]);
   const [tools, setTools] = useState<MyTool[]>([]);
+  const [products, setProducts] = useState<MyProduct[]>([]);
   const [responsibilities, setResponsibilities] = useState<MyResponsibility[]>(
     [],
   );
@@ -179,11 +188,16 @@ function MyWork() {
       .then((r) => mounted && setCards(r.data.cards ?? []))
       .catch(() => mounted && setCards([]));
     axiosInstance
-      .get<{ stockItems: MyStockItem[]; tools: MyTool[] }>("/my-work/checkouts")
+      .get<{
+        stockItems: MyStockItem[];
+        tools: MyTool[];
+        products?: MyProduct[];
+      }>("/my-work/checkouts")
       .then((r) => {
         if (!mounted) return;
         setStockItems(r.data.stockItems ?? []);
         setTools(r.data.tools ?? []);
+        setProducts(r.data.products ?? []);
       })
       .catch(() => undefined);
     axiosInstance
@@ -342,9 +356,10 @@ function MyWork() {
         <View className="border-b border-border p-4">
           <Text className="font-sans-semibold text-base text-card-foreground">
             Zimmetim — Malzeme ({stockItems.length}) · Araç ({tools.length})
+            {products.length > 0 ? ` · Ürün (${products.length})` : ""}
           </Text>
         </View>
-        {stockItems.length === 0 && tools.length === 0 ? (
+        {stockItems.length === 0 && tools.length === 0 && products.length === 0 ? (
           <Text className="p-4 text-sm text-muted-foreground">
             Üzerinize teslim edilmiş malzeme veya araç yok.
           </Text>
@@ -399,6 +414,31 @@ function MyWork() {
                 <StatusBadge
                   label={t.status === "returning" ? "iade yolda" : "üzerimde"}
                 />
+              </View>
+            ))}
+            {products.map((p, i) => (
+              <View
+                key={p.id}
+                className={
+                  stockItems.length > 0 || tools.length > 0 || i > 0
+                    ? "flex-row items-center gap-2 border-t border-border p-3"
+                    : "flex-row items-center gap-2 p-3"
+                }
+              >
+                <View className="flex-1">
+                  <Text className="text-sm text-foreground" numberOfLines={1}>
+                    {p.code} {p.name}
+                  </Text>
+                  {p.stageName ? (
+                    <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+                      Girdi: {p.stageName}
+                    </Text>
+                  ) : null}
+                </View>
+                <Text className="font-mono text-xs text-foreground">
+                  {p.quantity} {p.unit ?? ""}
+                </Text>
+                <StatusBadge label="üzerimde" />
               </View>
             ))}
           </>

@@ -5,9 +5,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * the lot (and its stock). Drops the vestigial `materials.customer_id` and
  * `materials.project_id` columns (their FKs/indexes go with them).
  */
-export class DropMaterialCustomerProject1783050000000
-  implements MigrationInterface
-{
+export class DropMaterialCustomerProject1783050000000 implements MigrationInterface {
   name = 'DropMaterialCustomerProject1783050000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

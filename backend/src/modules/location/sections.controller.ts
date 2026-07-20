@@ -72,7 +72,8 @@ export class SectionsController {
   @RequirePermissions('section-reservations:read')
   @Get(':id/schedule')
   @ApiOperation({
-    summary: "Section detail Gantt feed: reservations + reserved orders' stages",
+    summary:
+      "Section detail Gantt feed: reservations + reserved orders' stages",
   })
   schedule(
     @Param('id', ParseUUIDPipe) id: string,

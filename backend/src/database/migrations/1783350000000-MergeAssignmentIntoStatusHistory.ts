@@ -7,9 +7,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * table, its endpoints and permission keys are removed — historical
  * assignment rows are dropped by user decision (no backfill).
  */
-export class MergeAssignmentIntoStatusHistory1783350000000
-  implements MigrationInterface
-{
+export class MergeAssignmentIntoStatusHistory1783350000000 implements MigrationInterface {
   name = 'MergeAssignmentIntoStatusHistory1783350000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
