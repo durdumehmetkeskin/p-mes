@@ -14,12 +14,16 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
+import { WarehouseScoped } from '../auth/decorators/warehouse-scoped.decorator';
+import type { User } from '../users/entities/user.entity';
 import { CreateRackDto } from './dto/create-rack.dto';
 import { ListRacksQueryDto } from './dto/list-racks-query.dto';
 import { UpdateRackDto } from './dto/update-rack.dto';
 import { Rack } from './entities/rack.entity';
 import { RacksService } from './racks.service';
+import { WarehouseScopeService } from './warehouse-scope.service';
 
 const SORTABLE_FIELDS: ReadonlyArray<keyof Rack> = [
   'id',
@@ -36,11 +40,15 @@ const SORTABLE_FIELDS: ReadonlyArray<keyof Rack> = [
 export class RacksController {
   constructor(private readonly racksService: RacksService) {}
 
+  // Reads: key holders see all; warehouse responsibles see their warehouses'
+  // racks (they pick a rack when re-shelving returns / receiving stock).
   @RequirePermissions('racks:read')
+  @WarehouseScoped()
   @Get()
   @ApiOperation({ summary: 'List racks (paginated, filter by zone)' })
   async findAll(
     @Query() query: ListRacksQueryDto,
+    @CurrentUser() user: User,
     @Res({ passthrough: true }) res: Response,
   ): Promise<Rack[]> {
     const skip = query._start ?? 0;
@@ -59,6 +67,7 @@ export class RacksController {
       q: query.q,
       zoneId: query.zoneId,
       orderId: query.orderId,
+      scope: WarehouseScopeService.resolveScope(user, 'racks:read'),
     });
 
     res.setHeader('x-total-count', total);
@@ -66,10 +75,17 @@ export class RacksController {
   }
 
   @RequirePermissions('racks:read')
+  @WarehouseScoped()
   @Get(':id')
   @ApiOperation({ summary: 'Get a rack by id' })
-  findOne(@Param('id', ParseUUIDPipe) id: string): Promise<Rack> {
-    return this.racksService.findOne(id);
+  findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+  ): Promise<Rack> {
+    return this.racksService.findOne(
+      id,
+      WarehouseScopeService.resolveScope(user, 'racks:read'),
+    );
   }
 
   @RequirePermissions('racks:create')

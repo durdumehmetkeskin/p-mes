@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { FindOptionsWhere, ILike, Repository } from 'typeorm';
+import { FindOptionsWhere, ILike, In, Repository } from 'typeorm';
 import { Rack } from './entities/rack.entity';
 
 @Injectable()
@@ -26,10 +26,15 @@ export class RacksRepository {
     q?: string;
     zoneId?: string;
     orderId?: string;
+    /** Restrict to racks whose zone belongs to one of these warehouses. */
+    warehouseIds?: string[];
   }): Promise<[Rack[], number]> {
     const base: FindOptionsWhere<Rack> = {};
     if (options.zoneId) base.zoneId = options.zoneId;
     if (options.orderId) base.orderId = options.orderId;
+    if (options.warehouseIds) {
+      base.zone = { warehouseId: In(options.warehouseIds) };
+    }
 
     const where: FindOptionsWhere<Rack> | FindOptionsWhere<Rack>[] = options.q
       ? [

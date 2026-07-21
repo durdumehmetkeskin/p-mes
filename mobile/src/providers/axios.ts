@@ -122,13 +122,24 @@ axiosInstance.interceptors.response.use(
       | (InternalAxiosRequestConfig & { _retry?: boolean })
       | undefined;
 
-    const isAuthEndpoint = original?.url?.includes("/auth/");
+    // Only token-issuing endpoints are exempt from refresh-retry (refreshing
+    // after a failed login/refresh is meaningless and can recurse). /auth/me
+    // and other authenticated /auth/* routes MUST retry like any request — a
+    // cold start with an expired access token 401s here first, and without the
+    // retry the permission load fails and the nav menu renders unfiltered.
+    const isTokenEndpoint = [
+      "/auth/login",
+      "/auth/register",
+      "/auth/refresh",
+      "/auth/forgot-password",
+      "/auth/reset-password",
+    ].some((p) => original?.url?.includes(p));
 
     if (
       error.response?.status === 401 &&
       original &&
       !original._retry &&
-      !isAuthEndpoint
+      !isTokenEndpoint
     ) {
       original._retry = true;
       const newToken = await refreshAccessToken();

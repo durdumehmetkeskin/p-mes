@@ -12,6 +12,10 @@ import { UpdateRackDto } from './dto/update-rack.dto';
 import { Rack } from './entities/rack.entity';
 import { Zone } from './entities/zone.entity';
 import { RacksRepository } from './racks.repository';
+import {
+  WarehouseScopeService,
+  type WarehouseScope,
+} from './warehouse-scope.service';
 import { ZonesService } from './zones.service';
 
 @Injectable()
@@ -44,14 +48,25 @@ export class RacksService {
     q?: string;
     zoneId?: string;
     orderId?: string;
+    scope?: WarehouseScope;
   }): Promise<[Rack[], number]> {
-    return this.racksRepository.findAndCount(options);
+    const { scope, ...rest } = options;
+    if (Array.isArray(scope) && scope.length === 0) {
+      return Promise.resolve([[], 0]);
+    }
+    return this.racksRepository.findAndCount({
+      ...rest,
+      warehouseIds: scope === 'ALL' || scope === undefined ? undefined : scope,
+    });
   }
 
-  async findOne(id: string): Promise<Rack> {
+  async findOne(id: string, scope?: WarehouseScope): Promise<Rack> {
     const rack = await this.racksRepository.findById(id);
     if (!rack) {
       throw new NotFoundException(`Rack ${id} not found`);
+    }
+    if (scope !== undefined) {
+      WarehouseScopeService.assertInScope(scope, rack.zone?.warehouseId);
     }
     return rack;
   }
