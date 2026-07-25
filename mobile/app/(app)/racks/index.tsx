@@ -22,7 +22,6 @@ export default function RacksListScreen() {
       title="Racks"
       search
       createRoute="/racks/create"
-      tabBar
       emptyTitle="No racks"
       renderItem={(r) => (
         <Pressable

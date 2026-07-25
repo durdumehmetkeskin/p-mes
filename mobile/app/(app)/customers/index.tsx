@@ -21,7 +21,6 @@ export default function CustomersListScreen() {
       title="Customers"
       search
       createRoute="/customers/create"
-      tabBar
       emptyTitle="No customers"
       renderItem={(c) => (
         <Pressable

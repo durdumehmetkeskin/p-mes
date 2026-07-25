@@ -16,6 +16,7 @@ const NO_UPDATE: ReadonlySet<string> = new Set([
 // Entities that must never be deleted (immutable history).
 const NO_DELETE: ReadonlySet<string> = new Set([
   'AuditLog',
+  'CustodyRecord',
   'InventoryTransaction',
   'ToolStatusHistory',
 ]);

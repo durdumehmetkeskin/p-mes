@@ -54,7 +54,7 @@ export default function SettingsScreen() {
   };
 
   return (
-    <Screen title="Settings" tabBar>
+    <Screen title="Settings">
       <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
         <View className="rounded-lg border border-border bg-card p-4">
           <SectionLabel>Security</SectionLabel>

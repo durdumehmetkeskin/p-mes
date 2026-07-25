@@ -104,7 +104,7 @@ export default function BoardScreen() {
   };
 
   return (
-    <Screen title="Board" tabBar>
+    <Screen title="Board">
       <View className="flex-1">
         {isAdmin ? (
           <View className="gap-2 border-b border-border p-3">

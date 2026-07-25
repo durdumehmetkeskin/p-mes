@@ -67,7 +67,6 @@ export default function AuditLogsListScreen() {
     <ListScreen<AuditLog>
       resource="audit-logs"
       title="Audit Logs"
-      tabBar
       filters={filters}
       sorters={[{ field: "createdAt", order: "desc" }]}
       ListHeader={header}

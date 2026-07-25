@@ -59,7 +59,7 @@ export default function ScanScreen() {
   };
 
   return (
-    <Screen title="Scan QR" tabBar>
+    <Screen title="Scan QR">
       {!permission ? (
         <View className="flex-1 items-center justify-center p-6">
           <Text className="text-sm text-muted-foreground">Requesting camera…</Text>

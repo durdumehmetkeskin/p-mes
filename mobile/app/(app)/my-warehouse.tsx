@@ -275,7 +275,7 @@ export default function MyWarehouseScreen() {
   );
 
   return (
-    <Screen title="My Warehouse" tabBar>
+    <Screen title="My Warehouse">
       <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
         <View className="gap-2">
           <Text className="text-xs font-sans-semibold uppercase tracking-wider text-muted-foreground">

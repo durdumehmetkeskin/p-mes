@@ -6,6 +6,9 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
+import { CustodyService } from '../custody/custody.service';
+import { CustodyCloseAction } from '../custody/enums/custody-close-action.enum';
+import { CustodyItemType } from '../custody/enums/custody-item-type.enum';
 import {
   NotificationsService,
   NotificationType,
@@ -41,6 +44,7 @@ export class ToolReservationsService {
     @InjectRepository(ToolStatusHistory)
     private readonly toolStatusHistory: Repository<ToolStatusHistory>,
     private readonly notifications: NotificationsService,
+    private readonly custody: CustodyService,
   ) {}
 
   /**
@@ -173,6 +177,18 @@ export class ToolReservationsService {
     res.receivedByUserId = user.id;
     res.receivedAt = new Date();
     await this.reservations.save(res);
+
+    // Custody ledger: the worker's zimmet record opens at receive.
+    await this.custody.open({
+      itemType: CustodyItemType.Tool,
+      sourceId: res.id,
+      userId: user.id,
+      stageId: res.stageId,
+      itemCode: res.tool?.code,
+      itemName: res.tool?.name,
+      stageName: stage.name,
+      receivedAt: res.receivedAt,
+    });
     return this.listForTool(res.toolId);
   }
 
@@ -192,6 +208,8 @@ export class ToolReservationsService {
     res.returnedByUserId = user.id;
     res.returnedAt = new Date();
     await this.reservations.save(res);
+    // Custody ledger: return started — closes when the crib re-receives.
+    await this.custody.markReturning(CustodyItemType.Tool, res.id);
 
     await this.notifications.notifyUser(
       res.tool?.rack?.zone?.warehouse?.responsibleUserId ?? null,
@@ -224,6 +242,10 @@ export class ToolReservationsService {
     }
     res.status = ToolReservationStatus.Returned;
     await this.reservations.save(res);
+    // Custody ledger: the crib's acceptance closes the holder's record.
+    await this.custody.close(CustodyItemType.Tool, res.id, {
+      action: CustodyCloseAction.Returned,
+    });
     return this.listForTool(res.toolId);
   }
 
@@ -249,6 +271,11 @@ export class ToolReservationsService {
         'Araç rezervasyonu kaldırıldı',
       );
     }
+    // Custody ledger: an open record for a removed reservation is released
+    // (no-op when never received / already closed).
+    await this.custody.close(CustodyItemType.Tool, res.id, {
+      action: CustodyCloseAction.Released,
+    });
   }
 
   // --- stage-start guard + usage hooks (called by ProcessStagesService) ---

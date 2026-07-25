@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { CustodyModule } from '../custody/custody.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { InventoryModule } from '../inventory/inventory.module';
 import { LocationModule } from '../location/location.module';
@@ -28,6 +29,7 @@ import { ProductTypesService } from './product-types.service';
     TypeOrmModule.forFeature([Product, ProductType, ProcessStage, Order]),
     ProjectModule,
     InventoryModule,
+    CustodyModule,
     // Storage racks (a location's storage area) — where products are shelved.
     LocationModule,
     NotificationsModule,

@@ -22,7 +22,6 @@ export default function ContactsListScreen() {
       resource="contacts"
       title="Contacts"
       createRoute="/contacts/create"
-      tabBar
       emptyTitle="No contacts"
       renderItem={(c) => (
         <Pressable

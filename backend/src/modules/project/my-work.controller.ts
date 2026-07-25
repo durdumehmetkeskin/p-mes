@@ -21,6 +21,15 @@ export class MyWorkController {
     return this.service.checkouts(user);
   }
 
+  @Get('custody')
+  @ApiOperation({
+    summary:
+      'Full custody picture: pending pickups, currently held, and closed history',
+  })
+  custody(@CurrentUser() user: User): ReturnType<MyWorkService['custody']> {
+    return this.service.custody(user);
+  }
+
   @Get('responsibilities')
   @ApiOperation({
     summary:

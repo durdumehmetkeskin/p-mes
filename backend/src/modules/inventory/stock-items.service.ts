@@ -6,6 +6,9 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In, IsNull, Repository } from 'typeorm';
+import { CustodyService } from '../custody/custody.service';
+import { CustodyCloseAction } from '../custody/enums/custody-close-action.enum';
+import { CustodyItemType } from '../custody/enums/custody-item-type.enum';
 import {
   NotificationType,
   NotificationsService,
@@ -49,6 +52,7 @@ export class StockItemsService {
     private readonly stockAlert: StockAlertService,
     private readonly qrService: QrService,
     private readonly notifications: NotificationsService,
+    private readonly custody: CustodyService,
     @InjectRepository(Order)
     private readonly orders: Repository<Order>,
     @InjectRepository(ProcessStage)
@@ -637,6 +641,14 @@ export class StockItemsService {
     manager: EntityManager,
     reserved: StockItem,
   ): Promise<void> {
+    // Custody ledger: a delivered item vanishing with its stage/order is a
+    // release (no-op for never-received statuses).
+    await this.custody.close(
+      CustodyItemType.StockItem,
+      reserved.id,
+      { action: CustodyCloseAction.Released },
+      manager,
+    );
     const pool = await manager.findOne(StockItem, {
       where: {
         lotId: reserved.lotId,
@@ -738,6 +750,12 @@ export class StockItemsService {
       }
       item.status = StockItemStatus.Returning;
       await manager.save(item);
+      // Custody ledger: held items now walk back — mark the return started.
+      await this.custody.markReturning(
+        CustodyItemType.StockItem,
+        item.id,
+        manager,
+      );
       returning.push(item);
     }
     return returning;
@@ -865,6 +883,26 @@ export class StockItemsService {
         receivedAt: item.receivedAt,
       });
       await manager.save(tx);
+
+      // Custody ledger: the receive opens the user's zimmet record.
+      await this.custody.open(
+        {
+          itemType: CustodyItemType.StockItem,
+          sourceId: item.id,
+          userId: user.id,
+          stageId: item.stageId,
+          itemCode: item.lot?.material?.code,
+          itemName: item.lot?.material?.name,
+          lotNumber: item.lot?.lotNumber,
+          unit: item.lot?.material?.materialUnit?.name,
+          quantity: item.quantity,
+          orderNumber: item.order?.orderNumber,
+          stageName: item.stage?.name,
+          warehouseCode: item.warehouse?.code,
+          receivedAt: item.receivedAt,
+        },
+        manager,
+      );
     });
 
     return this.findOne(id);
@@ -898,6 +936,8 @@ export class StockItemsService {
     item.returnedByUserId = user.id;
     item.returnedAt = new Date();
     await this.stockItemsRepository.save(item);
+    // Custody ledger: return started ("iade yolda") — closes at receive-return.
+    await this.custody.markReturning(CustodyItemType.StockItem, item.id);
 
     // Ask the warehouse responsible to weigh + re-shelve the returned leftover.
     const material = item.lot?.material;
@@ -967,6 +1007,19 @@ export class StockItemsService {
         : null;
 
     const availableId = await this.dataSource.transaction(async (manager) => {
+      // Custody ledger: the warehouse's acceptance closes the holder's record
+      // (do it BEFORE the item may be soft-removed/merged below).
+      await this.custody.close(
+        CustodyItemType.StockItem,
+        item.id,
+        {
+          action: CustodyCloseAction.Returned,
+          returnedQuantity: dto.quantity,
+          usedQuantity: usedAtStage,
+        },
+        manager,
+      );
+
       // Ledger: the leftover coming back into the warehouse/rack.
       const returnTx = manager.create(InventoryTransaction, {
         type: InventoryTransactionType.Return,
@@ -1100,6 +1153,18 @@ export class StockItemsService {
         stageId: item.stageId,
       });
       await manager.save(tx);
+
+      // Custody ledger: no-op unless the item was in someone's custody.
+      await this.custody.close(
+        CustodyItemType.StockItem,
+        item.id,
+        {
+          action: CustodyCloseAction.Consumed,
+          returnedQuantity: 0,
+          usedQuantity: item.quantity,
+        },
+        manager,
+      );
     });
 
     await this.stockAlert.check(item.lot.materialId);

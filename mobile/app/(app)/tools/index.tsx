@@ -103,7 +103,6 @@ export default function ToolsListScreen() {
       title="Tools"
       search
       createRoute="/tools/create"
-      tabBar
       filters={filters}
       emptyTitle="No tools"
       ListHeader={<ToolsHeader category={category} onSelect={setCategory} />}

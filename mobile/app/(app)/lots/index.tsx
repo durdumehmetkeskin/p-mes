@@ -23,7 +23,6 @@ export default function LotsListScreen() {
       title="Lots"
       search
       createRoute="/lots/create"
-      tabBar
       emptyTitle="No lots"
       renderItem={(l) => (
         <Pressable

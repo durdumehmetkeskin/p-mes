@@ -66,7 +66,6 @@ export default function NotificationsScreen() {
     <ListScreen<NotificationRow>
       resource="notifications"
       title="Notifications"
-      tabBar
       sorters={[{ field: "createdAt", order: "desc" }]}
       emptyTitle="No notifications"
       headerRight={

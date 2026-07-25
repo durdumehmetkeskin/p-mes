@@ -20,7 +20,6 @@ export default function LocationsListScreen() {
       title="Locations"
       search
       createRoute="/locations/create"
-      tabBar
       emptyTitle="No locations"
       renderItem={(l) => (
         <Pressable

@@ -2,14 +2,13 @@ import type { ReactNode } from "react";
 import { View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { QuickTabBar } from "@/components/navigation/quick-tab-bar";
 import { ScreenHeader } from "@/components/navigation/screen-header";
 import { cn } from "@/lib/utils";
 
 /**
- * Standard screen scaffold: top-inset-safe custom header + content area, with
- * an optional persistent bottom quick-tab bar (top-level screens) and optional
- * content padding.
+ * Standard screen scaffold: top-inset-safe custom header + content area with
+ * optional padding. The bottom quick-tab bar is NOT rendered here — it lives
+ * once in the (app) group layout, fixed under every screen.
  */
 export function Screen({
   title,
@@ -17,7 +16,6 @@ export function Screen({
   canGoBack = false,
   headerRight,
   children,
-  tabBar = false,
   padded = false,
 }: {
   title: string;
@@ -25,7 +23,6 @@ export function Screen({
   canGoBack?: boolean;
   headerRight?: ReactNode;
   children: ReactNode;
-  tabBar?: boolean;
   padded?: boolean;
 }) {
   return (
@@ -39,7 +36,6 @@ export function Screen({
         />
       </SafeAreaView>
       <View className={cn("flex-1", padded && "p-4")}>{children}</View>
-      {tabBar ? <QuickTabBar /> : null}
     </View>
   );
 }

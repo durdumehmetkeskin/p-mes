@@ -35,7 +35,6 @@ export interface ListScreenProps<T> {
   searchField?: string;
   searchPlaceholder?: string;
   createRoute?: string;
-  tabBar?: boolean;
   emptyTitle?: string;
   emptyMessage?: string;
   headerRight?: ReactNode;
@@ -55,7 +54,6 @@ export function ListScreen<T extends BaseRecord>({
   searchField = "q",
   searchPlaceholder = "Search…",
   createRoute,
-  tabBar = false,
   emptyTitle,
   emptyMessage,
   headerRight,
@@ -160,7 +158,7 @@ export function ListScreen<T extends BaseRecord>({
   );
 
   return (
-    <Screen title={title} subtitle={subtitle} headerRight={right} tabBar={tabBar}>
+    <Screen title={title} subtitle={subtitle} headerRight={right}>
       {search ? (
         <View className="border-b border-border bg-background px-4 py-2">
           <Input

@@ -26,7 +26,8 @@ export class StockItemsRepository {
   // so lot.project / zone.project add no eager blow-up. The zone/project chain
   // powers the warehouse hub's "which zone / project / rack / order" drill-in.
   private static readonly RELATIONS = {
-    lot: { material: true, project: true },
+    // materialUnit rides along for unit display + the custody-ledger snapshot.
+    lot: { material: { materialUnit: true }, project: true },
     warehouse: true,
     rack: { order: true, zone: { project: true } },
     order: true,

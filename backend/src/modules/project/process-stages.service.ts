@@ -6,6 +6,9 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In, IsNull, Repository } from 'typeorm';
+import { CustodyService } from '../custody/custody.service';
+import { CustodyCloseAction } from '../custody/enums/custody-close-action.enum';
+import { CustodyItemType } from '../custody/enums/custody-item-type.enum';
 import { Product } from '../products/entities/product.entity';
 import { StockItem } from '../inventory/entities/stock-item.entity';
 import { StockItemsService } from '../inventory/stock-items.service';
@@ -65,6 +68,7 @@ export class ProcessStagesService {
     private readonly projects: ProjectsService,
     private readonly notifications: NotificationsService,
     private readonly ordersService: OrdersService,
+    private readonly custody: CustodyService,
   ) {}
 
   /** Non-admins must be a member of the stage/process's project (404 else). */
@@ -755,6 +759,13 @@ export class ProcessStagesService {
       for (const res of reservations) {
         await this.toolReservationsService.releaseReservation(res, user);
       }
+      // Custody ledger: close whatever is still open for this stage before
+      // the FK cascade destroys the source rows.
+      await this.custody.closeAllForStage(
+        id,
+        CustodyCloseAction.Released,
+        manager,
+      );
       // Hard delete: detail lines, tool reservations AND dependency links
       // cascade via FK (successors of the deleted node become roots).
       await manager.delete(ProcessStage, { id });
@@ -1072,6 +1083,18 @@ export class ProcessStagesService {
       stage.completedAt = null;
     }
     const saved = await this.stages.save(stage);
+
+    // Custody ledger: completing the stage uses up its input products (the
+    // holders' records close as consumed). Only products — returning stock
+    // stays open until the warehouse weighs it in.
+    if (status === ProcessStageStatus.Completed) {
+      await this.custody.closeAllForStage(
+        id,
+        CustodyCloseAction.Consumed,
+        undefined,
+        [CustodyItemType.Product],
+      );
+    }
 
     await this.recomputeOverall(stage.processId);
     // A duration entered at completion changes the process total.

@@ -26,7 +26,6 @@ export default function MaterialsListScreen() {
       searchPlaceholder="Search materials…"
       createRoute="/materials/create"
       headerRight={<StockActionsButton />}
-      tabBar
       emptyTitle="No materials"
       emptyMessage="Create your first material to get started."
       renderItem={(m) => (

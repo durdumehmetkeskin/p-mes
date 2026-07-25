@@ -19,7 +19,6 @@ export default function RolesListScreen() {
       resource="roles"
       title="Roles"
       createRoute="/roles/create"
-      tabBar
       emptyTitle="No roles"
       renderItem={(r) => (
         <Pressable

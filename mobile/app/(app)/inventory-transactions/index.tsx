@@ -38,7 +38,6 @@ export default function InventoryTransactionsListScreen() {
     <ListScreen<Txn>
       resource="inventory-transactions"
       title="Stock Movements"
-      tabBar
       emptyTitle="No movements"
       emptyMessage="Stock movements appear here as materials are received, issued or transferred."
       sorters={[{ field: "createdAt", order: "desc" }]}

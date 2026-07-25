@@ -44,6 +44,7 @@ import { Toaster } from "./components/refine-ui/notification/toaster";
 import { useNotificationProvider } from "./components/refine-ui/notification/use-notification-provider";
 import { ThemeProvider } from "./components/refine-ui/theme/theme-provider";
 import { Dashboard } from "./pages/dashboard";
+import { MyCustodyPage } from "./pages/my-custody";
 import { ForgotPassword } from "./pages/forgotPassword";
 import { Login } from "./pages/login";
 import { Register } from "./pages/register";
@@ -180,6 +181,17 @@ function App() {
                 meta: {
                   label: "Dashboard",
                   icon: <LayoutDashboard className="h-4 w-4" />,
+                },
+              },
+              // Self-scoped custody page — no permission key in the catalogue,
+              // so every authenticated user sees it (access control fails open
+              // for ungated resources).
+              {
+                name: "my-custody",
+                list: "/my-custody",
+                meta: {
+                  label: "Zimmetlerim",
+                  icon: <PackageCheck className="h-4 w-4" />,
                 },
               },
               // Personal notifications — surfaced via the header bell, not the
@@ -591,6 +603,7 @@ function App() {
                 }
               >
                 <Route index element={<Dashboard />} />
+                <Route path="/my-custody" element={<MyCustodyPage />} />
 
                 {/* create/edit render as a modal over the (still-mounted) list
                     via the list's <Outlet/>. show stays a full page. */}

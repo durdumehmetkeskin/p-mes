@@ -13,6 +13,7 @@ import {
   type LucideIcon,
   MapPin,
   Package,
+  PackageCheck,
   Rows3,
   ScanLine,
   ScrollText,
@@ -41,6 +42,8 @@ export interface NavGroup {
 /** Top-of-drawer items with no group heading. */
 export const NAV_TOP: NavItem[] = [
   { label: "Dashboard", route: "/", icon: LayoutDashboard },
+  // Self-scoped custody page — no resource, so it is shown to everyone.
+  { label: "Zimmetlerim", route: "/my-custody", icon: PackageCheck },
   { label: "Notifications", route: "/notifications", icon: Bell },
   { label: "Scan QR", route: "/scan", icon: ScanLine },
   { label: "Settings", route: "/settings", icon: Settings },

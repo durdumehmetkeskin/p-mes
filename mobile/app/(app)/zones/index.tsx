@@ -22,7 +22,6 @@ export default function ZonesListScreen() {
       title="Zones"
       search
       createRoute="/zones/create"
-      tabBar
       emptyTitle="No zones"
       renderItem={(z) => (
         <Pressable

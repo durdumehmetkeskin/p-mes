@@ -49,6 +49,7 @@ import { Zone } from '../inventory/entities/zone.entity';
 import { Tool } from '../tooling/entities/tool.entity';
 import { ToolStatusHistory } from '../tooling/entities/tool-status-history.entity';
 import { ToolingModule } from '../tooling/tooling.module';
+import { CustodyModule } from '../custody/custody.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { StageToolReservation } from './entities/stage-tool-reservation.entity';
 import { ToolReservationsController } from './tool-reservations.controller';
@@ -89,6 +90,7 @@ import { ProjectAllocationsService } from './project-allocations.service';
     NotificationsModule,
     ToolingModule,
     InventoryModule,
+    CustodyModule,
   ],
   controllers: [
     ProjectsController,

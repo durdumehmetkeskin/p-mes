@@ -286,7 +286,6 @@ export default function ReportCenterScreen() {
   return (
     <Screen
       title="Report Center"
-      tabBar
       headerRight={
         <Can resource="report-definitions" action="list">
           <Pressable

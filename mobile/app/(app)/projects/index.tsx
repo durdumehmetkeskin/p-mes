@@ -22,7 +22,6 @@ export default function ProjectsListScreen() {
       title="Projects"
       search
       createRoute="/projects/create"
-      tabBar
       emptyTitle="No projects"
       renderItem={(p) => (
         <Pressable

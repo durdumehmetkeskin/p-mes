@@ -21,7 +21,6 @@ export default function WarehousesListScreen() {
       title="Warehouses"
       search
       createRoute="/warehouses/create"
-      tabBar
       emptyTitle="No warehouses"
       renderItem={(w) => (
         <Pressable

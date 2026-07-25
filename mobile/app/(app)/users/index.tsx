@@ -25,7 +25,6 @@ export default function UsersListScreen() {
       title="Users"
       search
       createRoute="/users/create"
-      tabBar
       headerRight={
         <Pressable
           onPress={() => router.push("/users/workload")}

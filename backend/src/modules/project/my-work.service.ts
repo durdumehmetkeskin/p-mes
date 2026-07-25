@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
+import { CustodyService } from '../custody/custody.service';
+import { CustodyRecord } from '../custody/entities/custody-record.entity';
 import { StockItem } from '../inventory/entities/stock-item.entity';
 import { StockItemStatus } from '../inventory/enums/stock-item-status.enum';
 import { Product } from '../products/entities/product.entity';
@@ -84,6 +86,7 @@ export class MyWorkService {
     private readonly processes: Repository<Process>,
     @InjectRepository(Product)
     private readonly products: Repository<Product>,
+    private readonly custodyService: CustodyService,
   ) {}
 
   /**
@@ -229,6 +232,120 @@ export class MyWorkService {
         receivedAt: p.inputReceivedAt,
         stageName: p.consumedByStage?.name ?? null,
       })),
+    };
+  }
+
+  /**
+   * The full custody ("zimmet") picture for the user, in three buckets:
+   *  - `pending`: things awaiting THEIR pickup (computed live over the
+   *    operational tables — stock/tools/products bound to stages they work on)
+   *  - `held`: what they currently hold (= {@link checkouts}, the enforced
+   *    source of truth — also covers custody predating the ledger)
+   *  - `history`: closed ledger records (returned / consumed / released),
+   *    which survive deletion of the source rows.
+   */
+  async custody(user: User): Promise<{
+    pending: {
+      stockItems: MyStockItemView[];
+      tools: Array<MyToolView & { reservedFrom: Date | null; reservedTo: Date | null }>;
+      products: MyProductView[];
+    };
+    held: {
+      stockItems: MyStockItemView[];
+      tools: MyToolView[];
+      products: MyProductView[];
+    };
+    history: CustodyRecord[];
+  }> {
+    const [held, history, pendingItems, pendingTools, pendingProducts] =
+      await Promise.all([
+        this.checkouts(user),
+        this.custodyService.listHistory(user.id, 100),
+        this.stockItems.find({
+          where: {
+            status: In([
+              StockItemStatus.Reserving,
+              StockItemStatus.Reserved,
+              StockItemStatus.Delivering,
+            ]),
+            stage: { workers: { id: user.id } },
+          },
+          relations: {
+            lot: { material: { materialUnit: true } },
+            warehouse: true,
+            order: true,
+            stage: true,
+          },
+          loadEagerRelations: false,
+          order: { createdAt: 'DESC' },
+        }),
+        this.toolReservations.find({
+          where: {
+            status: In([
+              ToolReservationStatus.Reserved,
+              ToolReservationStatus.Delivering,
+            ]),
+            stage: { workers: { id: user.id } },
+          },
+          relations: { tool: true, stage: true },
+          loadEagerRelations: false,
+          order: { createdAt: 'DESC' },
+        }),
+        this.products
+          .createQueryBuilder('p')
+          .leftJoinAndSelect('p.materialUnit', 'mu')
+          .innerJoinAndSelect('p.consumedByStage', 'cs')
+          .innerJoin('cs.workers', 'w', 'w.id = :uid', { uid: user.id })
+          .where('p.input_received_at IS NULL')
+          .andWhere('cs.status != :done', {
+            done: ProcessStageStatus.Completed,
+          })
+          .orderBy('p.createdAt', 'DESC')
+          .getMany(),
+      ]);
+
+    return {
+      pending: {
+        stockItems: pendingItems.map((it) => ({
+          id: it.id,
+          quantity: it.quantity,
+          status: it.status,
+          receivedAt: null,
+          material: it.lot?.material
+            ? {
+                code: it.lot.material.code,
+                name: it.lot.material.name,
+                unit: it.lot.material.materialUnit?.name ?? null,
+              }
+            : null,
+          lot: it.lot ? { lotNumber: it.lot.lotNumber } : null,
+          warehouse: it.warehouse ? { code: it.warehouse.code } : null,
+          orderNumber: it.order?.orderNumber ?? null,
+          stageName: it.stage?.name ?? null,
+        })),
+        tools: pendingTools.map((r) => ({
+          id: r.id,
+          status: r.status,
+          receivedAt: null,
+          tool: r.tool
+            ? { id: r.tool.id, code: r.tool.code, name: r.tool.name }
+            : null,
+          stageName: r.stage?.name ?? null,
+          reservedFrom: r.reservedFrom,
+          reservedTo: r.reservedTo,
+        })),
+        products: pendingProducts.map((p) => ({
+          id: p.id,
+          code: p.code,
+          name: p.name,
+          quantity: p.quantity,
+          unit: p.materialUnit?.name ?? null,
+          receivedAt: null,
+          stageName: p.consumedByStage?.name ?? null,
+        })),
+      },
+      held,
+      history,
     };
   }
 }

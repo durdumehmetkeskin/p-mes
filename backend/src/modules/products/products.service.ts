@@ -9,6 +9,9 @@ import {
 import type { Readable } from 'stream';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { CustodyService } from '../custody/custody.service';
+import { CustodyCloseAction } from '../custody/enums/custody-close-action.enum';
+import { CustodyItemType } from '../custody/enums/custody-item-type.enum';
 import { MaterialUnitsService } from '../inventory/material-units.service';
 import { StorageRacksService } from '../location/storage-racks.service';
 import {
@@ -42,6 +45,7 @@ export class ProductsService {
     private readonly notifications: NotificationsService,
     private readonly qrService: QrService,
     private readonly minio: MinioService,
+    private readonly custody: CustodyService,
     @InjectRepository(ProcessStage)
     private readonly stages: Repository<ProcessStage>,
     @InjectRepository(Order)
@@ -382,6 +386,20 @@ export class ProductsService {
     product.inputReceivedByUser = { id: user.id } as User;
     product.inputReceivedAt = new Date();
     await this.productsRepository.save(product);
+
+    // Custody ledger: picking the input up opens the worker's zimmet record.
+    await this.custody.open({
+      itemType: CustodyItemType.Product,
+      sourceId: product.id,
+      userId: user.id,
+      stageId: product.consumedByStageId,
+      itemCode: product.code,
+      itemName: product.name,
+      quantity: product.quantity,
+      unit: product.materialUnit?.name,
+      stageName: stage?.name,
+      receivedAt: product.inputReceivedAt,
+    });
     return this.findOne(id, user);
   }
 
@@ -490,6 +508,10 @@ export class ProductsService {
     product.inputReceivedByUserId = null;
     product.inputReceivedAt = null;
     await this.productsRepository.save(product);
+    // Custody ledger: undoing the input link releases the holder's record.
+    await this.custody.close(CustodyItemType.Product, product.id, {
+      action: CustodyCloseAction.Released,
+    });
     return this.findOne(id, user);
   }
 

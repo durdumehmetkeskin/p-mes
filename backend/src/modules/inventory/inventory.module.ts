@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { CustodyModule } from '../custody/custody.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { Order } from '../project/entities/order.entity';
 import { Process } from '../project/entities/process.entity';
@@ -74,6 +75,7 @@ import { ZonesService } from './zones.service';
     ]),
     QrModule,
     NotificationsModule,
+    CustodyModule,
   ],
   controllers: [
     MaterialsController,

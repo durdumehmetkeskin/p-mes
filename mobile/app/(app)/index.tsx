@@ -351,14 +351,18 @@ function MyWork() {
         </View>
       ) : null}
 
-      {/* Checked-out items */}
+      {/* Checked-out items — the header opens the full custody page. */}
       <View className="rounded-lg border border-border bg-card">
-        <View className="border-b border-border p-4">
+        <Pressable
+          className="flex-row items-center justify-between border-b border-border p-4 active:bg-accent"
+          onPress={() => router.push("/my-custody")}
+        >
           <Text className="font-sans-semibold text-base text-card-foreground">
             Zimmetim — Malzeme ({stockItems.length}) · Araç ({tools.length})
             {products.length > 0 ? ` · Ürün (${products.length})` : ""}
           </Text>
-        </View>
+          <Text className="text-xs text-primary">Tümü →</Text>
+        </Pressable>
         {stockItems.length === 0 && tools.length === 0 && products.length === 0 ? (
           <Text className="p-4 text-sm text-muted-foreground">
             Üzerinize teslim edilmiş malzeme veya araç yok.
@@ -454,7 +458,7 @@ export default function DashboardScreen() {
   const { has } = usePermissions();
   const isAdmin = useIsAdmin();
   return (
-    <Screen title="Dashboard" tabBar>
+    <Screen title="Dashboard">
       <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
         <View className="flex-row flex-wrap justify-between gap-y-3">
           {has("materials:read") && (
