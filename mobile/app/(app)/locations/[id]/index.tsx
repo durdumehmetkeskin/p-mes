@@ -86,7 +86,9 @@ export default function LocationDetailScreen() {
           <Skeleton className="h-28 w-full" />
         </View>
       ) : (
-        <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
+        <ScrollView
+          contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 48 }}
+        >
           <View className="rounded-lg border border-border bg-card p-4">
             <View className="mb-2 flex-row items-center justify-between">
               <SectionLabel>Overview</SectionLabel>
@@ -124,12 +126,16 @@ export default function LocationDetailScreen() {
                       : "flex-row items-center justify-between p-3"
                   }
                 >
-                  <View className="flex-1">
+                  {/* Row opens the section detail (work calendar) — web parity. */}
+                  <Pressable
+                    className="flex-1"
+                    onPress={() => router.push(`/locations/${id}/section/${s.id}`)}
+                  >
                     <Text className="text-sm text-foreground">{s.name}</Text>
                     <Text className="font-mono text-xs text-muted-foreground">
                       {s.code}
                     </Text>
-                  </View>
+                  </Pressable>
                   <View className="flex-row items-center gap-1">
                     <Can resource="sections" action="edit">
                       <Pressable

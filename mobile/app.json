@@ -2,7 +2,7 @@
   "expo": {
     "name": "QUA-MES",
     "slug": "p-mes-mobile",
-    "version": "1.0.6",
+    "version": "1.0.13",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "scheme": "pmes",
@@ -15,7 +15,7 @@
     },
     "android": {
       "package": "com.pmes.mobile",
-      "versionCode": 7,
+      "versionCode": 14,
       "adaptiveIcon": {
         "backgroundColor": "#0b1326",
         "foregroundImage": "./assets/android-icon-foreground.png",

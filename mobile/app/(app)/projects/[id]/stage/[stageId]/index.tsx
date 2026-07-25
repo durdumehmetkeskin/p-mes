@@ -1,22 +1,16 @@
 import { useState } from "react";
-import { ScrollView, Text, TextInput, View } from "react-native";
+import { Text, TextInput, View } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import {
   type BaseRecord,
   useGetIdentity,
   useInvalidate,
   useOne,
 } from "@refinedev/core";
-import { type FieldValues, useForm } from "react-hook-form";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { toast } from "sonner-native";
 
 import { FieldRow, SectionLabel } from "@/components/refine-ui/field-row";
-import {
-  CheckboxGroupField,
-  NumberField,
-  TextAreaField,
-  TextField,
-} from "@/components/refine-ui/form";
 import { Screen } from "@/components/refine-ui/screen";
 import { StatusBadge } from "@/components/refine-ui/status-badge";
 import { AttachmentsPanel } from "@/components/attachments/attachments-panel";
@@ -25,19 +19,20 @@ import { StageDirectives } from "@/components/project/stage-directives";
 import { StageReservation } from "@/components/project/stage-reservation";
 import { StageStockItems } from "@/components/project/stage-stock-items";
 import { StageTools } from "@/components/project/stage-tools";
-import { useTeamMembers } from "@/components/project/use-team-members";
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { usePermissions } from "@/hooks/use-permissions";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { axiosInstance } from "@/providers/axios";
 import { colors } from "@/lib/theme";
+import { stageUnlocked } from "@/lib/stage-lock";
 
 interface Stage extends BaseRecord {
   id: string;
   name?: string;
   status?: string;
   sequence?: number;
+  incomingLinks?: Array<{ fromStageId: string }>;
   note?: string;
   directives?: string | null;
   durationHours?: number;
@@ -74,12 +69,11 @@ export default function StageDetailScreen() {
   );
   const stage = stages.find((s) => s.id === stageId);
 
-  const firstIncomplete = stages.findIndex((s) => s.status !== "completed");
-  const currentIndex = firstIncomplete === -1 ? stages.length : firstIncomplete;
+  // DAG lock rule shared with web — gates Start/Complete only; the process
+  // responsible may EDIT a locked (pending) stage's info regardless.
   const myIndex = stages.findIndex((s) => s.id === stageId);
-  const unlocked = myIndex <= currentIndex;
+  const unlocked = stageUnlocked(stages, myIndex);
 
-  const { members } = useTeamMembers(id);
   const { has } = usePermissions();
   const isAdmin = useIsAdmin();
   const { data: identity } = useGetIdentity<{ id: string }>();
@@ -94,27 +88,6 @@ export default function StageDetailScreen() {
     stage?.startedAt?.slice(0, 10) ?? stage?.estimatedStartDate ?? null;
   const windowEnd =
     stage?.completedAt?.slice(0, 10) ?? stage?.estimatedCompletedDate ?? null;
-  // Worker candidates = project team, plus any already-assigned worker who has
-  // since left the team (so they stay visible and can be unchecked).
-  const workerOptions = [
-    ...members.map((m) => ({ label: m.name ?? m.id, value: m.id })),
-    ...(stage?.workers ?? [])
-      .filter((w) => !members.some((m) => m.id === w.id))
-      .map((w) => ({ label: w.name ?? w.id, value: w.id })),
-  ];
-
-  const [savingInfo, setSavingInfo] = useState(false);
-  const { control, handleSubmit } = useForm<FieldValues>({
-    values: {
-      name: stage?.name ?? "",
-      durationHours: stage?.durationHours,
-      note: stage?.note ?? "",
-      estimatedStartDate: stage?.estimatedStartDate ?? "",
-      estimatedCompletedDate: stage?.estimatedCompletedDate ?? "",
-      estimatedDurationHours: stage?.estimatedDurationHours,
-      workerIds: (stage?.workers ?? []).map((w) => w.id),
-    },
-  });
 
   const refetch = () => {
     invalidate({ resource: "processes", invalidates: ["detail"], id: processId });
@@ -166,31 +139,6 @@ export default function StageDetailScreen() {
     }
   };
 
-  const saveInfo = handleSubmit(async (v) => {
-    setSavingInfo(true);
-    try {
-      await axiosInstance.patch(`/process-stages/${stageId}`, {
-        name: v.name,
-        note: v.note || undefined,
-        durationHours:
-          typeof v.durationHours === "number" ? v.durationHours : undefined,
-        estimatedStartDate: v.estimatedStartDate || undefined,
-        estimatedCompletedDate: v.estimatedCompletedDate || undefined,
-        estimatedDurationHours:
-          typeof v.estimatedDurationHours === "number"
-            ? v.estimatedDurationHours
-            : undefined,
-        workerIds: Array.isArray(v.workerIds) ? v.workerIds : undefined,
-      });
-      refetch();
-      toast.success("Stage saved");
-    } catch {
-      toast.error("Could not save stage");
-    } finally {
-      setSavingInfo(false);
-    }
-  });
-
   const status = stage?.status ?? "pending";
 
   return (
@@ -204,7 +152,14 @@ export default function StageDetailScreen() {
           <Text className="text-sm text-muted-foreground">Stage not found.</Text>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
+        // Keyboard-aware: the reservation panels have time/search inputs near
+        // the bottom — the page must extend by the keyboard height and stay
+        // scrollable so the hint texts and Reserve buttons remain reachable.
+        <KeyboardAwareScrollView
+          contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 48 }}
+          bottomOffset={24}
+          keyboardShouldPersistTaps="handled"
+        >
           <View className="rounded-lg border border-border bg-card p-4">
             <View className="mb-3 flex-row items-center justify-end">
               <StatusBadge label={status} />
@@ -283,100 +238,68 @@ export default function StageDetailScreen() {
                     />
                   ) : null}
                 </View>
+                {!unlocked ? (
+                  <Text className="text-xs text-muted-foreground">
+                    Locked — complete the prerequisite stages first.
+                  </Text>
+                ) : null}
               </View>
             ) : null}
           </View>
 
-          {/* Stage info is editable ONLY by the process responsible / admin
-              (PATCH is relationship-authorized). Workers get a read-only view —
-              they may only start/complete and record outputs. */}
-          {unlocked && canStatusAll ? (
-            <View className="rounded-lg border border-border bg-card p-4">
+          {/* Stage info is VIEW-ONLY here (web parity) — editing happens on
+              the separate Edit screen, available only to the process
+              responsible / admin (PATCH is relationship-authorized). */}
+          <View className="rounded-lg border border-border bg-card p-4">
+            <View className="flex-row items-center justify-between">
               <SectionLabel>Details</SectionLabel>
-              <View className="mt-2 gap-4">
-                <TextField control={control} name="name" label="Name" />
-                <NumberField
-                  control={control}
-                  name="durationHours"
-                  label="Duration (h)"
-                />
-                <TextAreaField control={control} name="note" label="Note" />
-                <TextField
-                  control={control}
-                  name="estimatedStartDate"
-                  label="Est. start"
-                  placeholder="YYYY-MM-DD"
-                  autoCapitalize="none"
-                />
-                <TextField
-                  control={control}
-                  name="estimatedCompletedDate"
-                  label="Est. completion"
-                  placeholder="YYYY-MM-DD"
-                  autoCapitalize="none"
-                />
-                <NumberField
-                  control={control}
-                  name="estimatedDurationHours"
-                  label="Est. duration (h)"
-                />
-                <CheckboxGroupField
-                  control={control}
-                  name="workerIds"
-                  label="Workers (team)"
-                  hint={
-                    workerOptions.length === 0
-                      ? "Önce proje ekibine kullanıcı ekleyin."
-                      : undefined
-                  }
-                  options={workerOptions}
-                />
-                <Button label="Save stage" loading={savingInfo} onPress={saveInfo} />
-              </View>
-            </View>
-          ) : (
-            <View className="rounded-lg border border-border bg-card p-4">
-              <SectionLabel>Details</SectionLabel>
-              <View className="mt-2">
-                <FieldRow label="Name" value={stage.name} />
-                <FieldRow
-                  label="Duration (h)"
-                  value={
-                    stage.durationHours != null
-                      ? String(stage.durationHours)
-                      : undefined
+              {canStatusAll ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  label="Edit"
+                  onPress={() =>
+                    router.push(
+                      `/projects/${id}/stage/${stageId}/edit?processId=${processId}`,
+                    )
                   }
                 />
-                <FieldRow label="Note" value={stage.note} />
-                <FieldRow label="Est. start" value={stage.estimatedStartDate} />
-                <FieldRow
-                  label="Est. completion"
-                  value={stage.estimatedCompletedDate}
-                />
-                <FieldRow
-                  label="Est. duration (h)"
-                  value={
-                    stage.estimatedDurationHours != null
-                      ? String(stage.estimatedDurationHours)
-                      : undefined
-                  }
-                />
-                <FieldRow
-                  label="Workers"
-                  value={
-                    (stage.workers ?? [])
-                      .map((w) => w.name ?? w.id)
-                      .join(", ") || undefined
-                  }
-                />
-              </View>
-              {!unlocked && canStatusAll ? (
-                <Text className="mt-2 text-xs text-muted-foreground">
-                  Complete earlier stages to edit this one.
-                </Text>
               ) : null}
             </View>
-          )}
+            <View className="mt-2">
+              <FieldRow label="Name" value={stage.name} />
+              <FieldRow
+                label="Duration (h)"
+                value={
+                  stage.durationHours != null
+                    ? String(stage.durationHours)
+                    : undefined
+                }
+              />
+              <FieldRow label="Note" value={stage.note} />
+              <FieldRow label="Est. start" value={stage.estimatedStartDate} />
+              <FieldRow
+                label="Est. completion"
+                value={stage.estimatedCompletedDate}
+              />
+              <FieldRow
+                label="Est. duration (h)"
+                value={
+                  stage.estimatedDurationHours != null
+                    ? String(stage.estimatedDurationHours)
+                    : undefined
+                }
+              />
+              <FieldRow
+                label="Workers"
+                value={
+                  (stage.workers ?? [])
+                    .map((w) => w.name ?? w.id)
+                    .join(", ") || undefined
+                }
+              />
+            </View>
+          </View>
 
           <StageDirectives
             stageId={stageId as string}
@@ -397,6 +320,7 @@ export default function StageDetailScreen() {
             stageId={stageId as string}
             orderId={process?.orderItem?.orderId}
             canAssign={canStatusAll}
+            canHandle={canStatusAll || canStatusWorker}
           />
 
           <StageTools
@@ -435,7 +359,7 @@ export default function StageDetailScreen() {
               onChanged={refetch}
             />
           )}
-        </ScrollView>
+        </KeyboardAwareScrollView>
       )}
     </Screen>
   );

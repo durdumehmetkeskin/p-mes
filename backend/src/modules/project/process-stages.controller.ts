@@ -234,7 +234,10 @@ export class ProcessStagesController {
     return this.service.getCompletionReport(id, user);
   }
 
-  @RequirePermissions('process-stages:update')
+  // No @RequirePermissions: authorization is decided in the service
+  // (assertReportEditor) — only the stage's workers, the owning process
+  // responsible or an admin may write, so workers file reports without the
+  // process-stages:update key (mirrors the status route).
   @Put('process-stages/:id/completion-report')
   @ApiOperation({
     summary:
@@ -248,7 +251,7 @@ export class ProcessStagesController {
     return this.service.upsertCompletionReport(id, dto, user);
   }
 
-  @RequirePermissions('process-stages:update')
+  // No @RequirePermissions: same service-enforced editor rule as the PUT.
   @Delete('process-stages/:id/completion-report')
   @HttpCode(204)
   @ApiOperation({ summary: 'Delete the stage completion report' })

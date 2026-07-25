@@ -19,6 +19,7 @@ export default function ProjectWorkspaceStack() {
       <Stack.Screen name="contact-new" options={modal} />
       <Stack.Screen name="reorder-stages" options={modal} />
       <Stack.Screen name="workflow-new" options={modal} />
+      <Stack.Screen name="stage/[stageId]/edit" options={modal} />
     </Stack>
   );
 }

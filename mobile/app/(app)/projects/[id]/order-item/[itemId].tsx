@@ -1,4 +1,5 @@
-import { ScrollView, View } from "react-native";
+import { View } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { type BaseRecord, useOne } from "@refinedev/core";
 import { useLocalSearchParams, useRouter } from "expo-router";
 
@@ -60,7 +61,14 @@ export default function OrderItemDetailScreen() {
           <Skeleton className="h-32 w-full" />
         </View>
       ) : (
-        <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
+        // Keyboard-aware: the inline add-stage inputs (name + estimates) sit
+        // mid-page — the list must extend past the keyboard and stay
+        // scrollable so nothing at the bottom is clipped.
+        <KeyboardAwareScrollView
+          contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 48 }}
+          bottomOffset={24}
+          keyboardShouldPersistTaps="handled"
+        >
           <View className="rounded-lg border border-border bg-card p-4">
             <SectionLabel>Item</SectionLabel>
             <FieldRow label="Line #" value={item?.sequence} mono />
@@ -85,7 +93,7 @@ export default function OrderItemDetailScreen() {
               has("attachments:create")
             }
           />
-        </ScrollView>
+        </KeyboardAwareScrollView>
       )}
     </Screen>
   );

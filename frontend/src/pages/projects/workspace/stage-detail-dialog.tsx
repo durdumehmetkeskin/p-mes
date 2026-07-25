@@ -320,11 +320,13 @@ export function StageDetailDialog({
           onChanged={onChanged}
         />
 
-        {/* Completion report — only once the stage is completed */}
+        {/* Completion report — only once the stage is completed. Editable by
+            the stage's workers, the process responsible or an admin (the
+            backend relationship-authorizes; no permission key needed). */}
         {status === "completed" && (
           <CompletionReportCard
             endpoint={`/process-stages/${stage.id}/completion-report`}
-            editable={has("process-stages:update")}
+            editable={canActOnStage}
             title="Completion report"
           />
         )}

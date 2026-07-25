@@ -87,6 +87,12 @@ export function SearchableSelect({
         ref={ref}
         snapPoints={["55%", "85%"]}
         enablePanDownToClose
+        // Keep the list usable while the search keyboard is open: the sheet
+        // EXTENDS to its top snap point instead of staying half-covered, and
+        // Android resizes the window rather than panning it away.
+        keyboardBehavior="extend"
+        keyboardBlurBehavior="restore"
+        android_keyboardInputMode="adjustResize"
         backdropComponent={renderBackdrop}
         backgroundStyle={{ backgroundColor: colors.card }}
         handleIndicatorStyle={{ backgroundColor: colors.mutedForeground }}

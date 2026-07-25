@@ -23,16 +23,25 @@ import { ActionMenu } from "@/components/ui/action-menu";
 import { Icon } from "@/components/ui/icon";
 import { axiosInstance } from "@/providers/axios";
 import { colors } from "@/lib/theme";
+import { stageUnlocked } from "@/lib/stage-lock";
+
+function apiErrMsg(err: unknown, fallback: string): string {
+  const msg = (err as { response?: { data?: { message?: string | string[] } } })
+    ?.response?.data?.message;
+  return Array.isArray(msg) ? msg.join(", ") : (msg ?? fallback);
+}
 
 interface Stage extends BaseRecord {
   id: string;
   name?: string;
   status?: string;
   sequence?: number;
+  incomingLinks?: Array<{ fromStageId: string }>;
 }
 interface Process extends BaseRecord {
   id: string;
   overallStatus?: string;
+  requireEstimates?: boolean;
   responsibleUserId?: string | null;
   responsibleUser?: { name?: string };
   stages?: Stage[];
@@ -54,11 +63,12 @@ function StageRow({
   onDelete: () => void;
 }) {
   const router = useRouter();
+  // Locked stages stay CLICKABLE (web parity): the detail screen is where the
+  // responsible edits a pending stage — only Start/Complete are lock-gated.
   return (
     <View className="flex-row items-center gap-2 border-t border-border p-3">
       <Pressable
         className="flex-1 flex-row items-center gap-2"
-        disabled={!unlocked}
         onPress={() =>
           router.push(
             `/projects/${projectId}/stage/${stage.id}?processId=${processId}`,
@@ -98,39 +108,61 @@ function ProcessCard({
   const { has } = usePermissions();
   const isAdmin = useIsAdmin();
   const { data: identity } = useGetIdentity<{ id: string }>();
-  // Only the process's responsible user (or an admin) may delete its stages.
-  const canDeleteStage =
+  // Structural stage editing (add/delete) is relationship-based: only the
+  // process's responsible user or an admin (backend enforces too) — web parity.
+  const canEditProcess =
     isAdmin || (!!identity?.id && identity.id === process.responsibleUserId);
   // Structure freeze: while the process runs, stages can't be added or
   // removed (backend enforces too) — editing existing stages stays allowed.
   const structureLocked = process.overallStatus === "in_progress";
-  // Types were removed — a stage is added by name alone.
+  // Types were removed — a stage is added by name alone (plus mandatory
+  // estimates when the process requires them, mirroring the web dialog).
   const [addingStage, setAddingStage] = useState(false);
   const [newStageName, setNewStageName] = useState("");
+  const [newStageEst, setNewStageEst] = useState({
+    start: "",
+    completed: "",
+    duration: "",
+  });
 
   const stages = [...(process.stages ?? [])].sort(
     (a, b) => (a.sequence ?? 0) - (b.sequence ?? 0),
   );
-  const firstIncomplete = stages.findIndex((s) => s.status !== "completed");
-  const currentIndex = firstIncomplete === -1 ? stages.length : firstIncomplete;
 
   const run = async (fn: () => Promise<unknown>, msg: string) => {
     try {
       await fn();
       refresh();
       toast.success(msg);
-    } catch {
-      toast.error("Action failed");
+    } catch (err) {
+      toast.error(apiErrMsg(err, "Action failed"));
     }
   };
 
+  const estOk =
+    !process.requireEstimates ||
+    (newStageEst.start !== "" &&
+      newStageEst.completed !== "" &&
+      Number(newStageEst.duration) > 0);
+
   const addStage = () => {
     const name = newStageName.trim();
-    if (!name) return;
+    if (!name || !estOk) return;
     setNewStageName("");
+    setNewStageEst({ start: "", completed: "", duration: "" });
     setAddingStage(false);
     void run(
-      () => axiosInstance.post(`/processes/${process.id}/stages`, { name }),
+      () =>
+        axiosInstance.post(`/processes/${process.id}/stages`, {
+          name,
+          ...(process.requireEstimates
+            ? {
+                estimatedStartDate: newStageEst.start,
+                estimatedCompletedDate: newStageEst.completed,
+                estimatedDurationHours: Number(newStageEst.duration) || 0,
+              }
+            : {}),
+        }),
       "Stage added",
     );
   };
@@ -202,7 +234,7 @@ function ProcessCard({
               )}
             />
           </Can>
-          {structureLocked ? null : (
+          {structureLocked || !canEditProcess ? null : (
           <Can resource="process-stages" action="create-stages">
             <Pressable
               onPress={() => setAddingStage((v) => !v)}
@@ -226,24 +258,59 @@ function ProcessCard({
 
       {/* Inline add-stage row (types removed — a stage is just a name). */}
       {addingStage && !structureLocked ? (
-        <View className="flex-row items-center gap-2 border-t border-border p-3">
-          <TextInput
-            className="h-10 flex-1 rounded-md border border-input bg-background px-3 text-sm text-foreground"
-            placeholder="New stage name…"
-            placeholderTextColor={colors.mutedForeground}
-            value={newStageName}
-            onChangeText={setNewStageName}
-            onSubmitEditing={addStage}
-            autoFocus
-            returnKeyType="done"
-          />
-          <Pressable
-            onPress={addStage}
-            disabled={!newStageName.trim()}
-            className="h-10 items-center justify-center rounded-md border border-border px-3 active:bg-accent"
-          >
-            <Text className="text-sm text-foreground">Add</Text>
-          </Pressable>
+        <View className="gap-2 border-t border-border p-3">
+          <View className="flex-row items-center gap-2">
+            <TextInput
+              className="h-10 flex-1 rounded-md border border-input bg-background px-3 text-sm text-foreground"
+              placeholder="New stage name…"
+              placeholderTextColor={colors.mutedForeground}
+              value={newStageName}
+              onChangeText={setNewStageName}
+              onSubmitEditing={addStage}
+              autoFocus
+              returnKeyType="done"
+            />
+            <Pressable
+              onPress={addStage}
+              disabled={!newStageName.trim() || !estOk}
+              className="h-10 items-center justify-center rounded-md border border-border px-3 active:bg-accent"
+            >
+              <Text className="text-sm text-foreground">Add</Text>
+            </Pressable>
+          </View>
+          {/* Estimates are mandatory on this process (backend rejects without). */}
+          {process.requireEstimates ? (
+            <View className="flex-row items-center gap-2">
+              <TextInput
+                className="h-10 flex-1 rounded-md border border-input bg-background px-2 text-xs text-foreground"
+                placeholder="Start YYYY-MM-DD"
+                placeholderTextColor={colors.mutedForeground}
+                autoCapitalize="none"
+                value={newStageEst.start}
+                onChangeText={(t) => setNewStageEst((p) => ({ ...p, start: t }))}
+              />
+              <TextInput
+                className="h-10 flex-1 rounded-md border border-input bg-background px-2 text-xs text-foreground"
+                placeholder="End YYYY-MM-DD"
+                placeholderTextColor={colors.mutedForeground}
+                autoCapitalize="none"
+                value={newStageEst.completed}
+                onChangeText={(t) =>
+                  setNewStageEst((p) => ({ ...p, completed: t }))
+                }
+              />
+              <TextInput
+                className="h-10 w-16 rounded-md border border-input bg-background px-2 text-xs text-foreground"
+                placeholder="Saat"
+                placeholderTextColor={colors.mutedForeground}
+                keyboardType="decimal-pad"
+                value={newStageEst.duration}
+                onChangeText={(t) =>
+                  setNewStageEst((p) => ({ ...p, duration: t }))
+                }
+              />
+            </View>
+          ) : null}
         </View>
       ) : null}
 
@@ -256,8 +323,8 @@ function ProcessCard({
             projectId={projectId}
             processId={process.id}
             stage={s}
-            unlocked={i <= currentIndex}
-            canDelete={canDeleteStage && !structureLocked}
+            unlocked={stageUnlocked(stages, i)}
+            canDelete={canEditProcess && !structureLocked}
             onDelete={() => deleteStage(s.id)}
           />
         ))

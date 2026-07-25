@@ -3,6 +3,7 @@ import { Alert, Pressable, Text, View } from "react-native";
 import { useApiUrl, useCustom } from "@refinedev/core";
 import { ArrowRightToLine, Undo2 } from "lucide-react-native";
 
+import { confirm } from "@/components/refine-ui/confirm";
 import { SectionLabel } from "@/components/refine-ui/field-row";
 import { StatusBadge } from "@/components/refine-ui/status-badge";
 import { Icon } from "@/components/ui/icon";
@@ -55,11 +56,15 @@ export function StageStockItems({
   stageId,
   orderId,
   canAssign = false,
+  canHandle = false,
 }: {
   stageId: string;
   orderId?: string;
   /** Process responsible or admin — may assign/unassign pool stock. */
   canAssign?: boolean;
+  /** Stage workers (+ responsible/admin) — may return or consume a DELIVERED
+   *  item; both are required before the stage can complete (web parity). */
+  canHandle?: boolean;
 }) {
   const apiUrl = useApiUrl();
   const { result, query } = useCustom<StageStockItem[]>({
@@ -123,6 +128,20 @@ export function StageStockItems({
     setBusyId(id);
     try {
       await axiosInstance.post(`/stock-items/${id}/unassign-stage`);
+      await refreshBoth();
+    } catch (e) {
+      fail(e as never);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  // Delivered-item exits before completion: return the leftover to the
+  // warehouse, or mark the whole quantity consumed at this stage.
+  const handle = async (id: string, verb: "return" | "consume-delivered") => {
+    setBusyId(id);
+    try {
+      await axiosInstance.post(`/stock-items/${id}/${verb}`);
       await refreshBoth();
     } catch (e) {
       fail(e as never);
@@ -210,6 +229,38 @@ export function StageStockItems({
                   <Text className="text-xs text-muted-foreground">
                     {`Returned by ${it.returnedBy ?? "—"} on ${returned}`}
                   </Text>
+                ) : null}
+                {/* Delivered-item exits before the stage can complete:
+                    return the leftover or mark it all consumed (web parity). */}
+                {canHandle && it.status === "delivered" ? (
+                  <View className="mt-1 flex-row gap-2">
+                    <Pressable
+                      onPress={() => void handle(it.id, "return")}
+                      disabled={busyId === it.id}
+                      className="flex-1 items-center rounded-md border border-border px-3 py-2 active:bg-accent"
+                    >
+                      <Text className="text-xs text-foreground">
+                        Return leftover
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() =>
+                        confirm({
+                          title: "Tüketildi olarak işaretle",
+                          message:
+                            "Malzemenin tamamı bu aşamada kullanıldı olarak kaydedilecek. Emin misiniz?",
+                          confirmLabel: "Tüketildi",
+                          destructive: true,
+                          onConfirm: () =>
+                            void handle(it.id, "consume-delivered"),
+                        })
+                      }
+                      disabled={busyId === it.id}
+                      className="flex-1 items-center rounded-md border border-border px-3 py-2 active:bg-accent"
+                    >
+                      <Text className="text-xs text-foreground">Consumed</Text>
+                    </Pressable>
+                  </View>
                 ) : null}
               </View>
             );
