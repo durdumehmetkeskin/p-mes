@@ -411,9 +411,28 @@ export function StageInputProductsPanel({
                   output of "{p.stage?.name ?? "connected stage"}"
                 </div>
               </div>
-              <span className="shrink-0 font-mono text-xs text-muted-foreground">
-                {p.quantity}
-                {p.materialUnit?.name ? ` ${p.materialUnit.name}` : ""}
+              <span className="flex shrink-0 items-center gap-2">
+                <span className="font-mono text-xs text-muted-foreground">
+                  {p.quantity}
+                  {p.materialUnit?.name ? ` ${p.materialUnit.name}` : ""}
+                </span>
+                {/* Pickup FORMALIZES the io link (backend consumes the product
+                    onto this stage) — required before the stage can start. */}
+                {p.inputReceivedAt ? (
+                  <span className="text-xs text-muted-foreground">
+                    Teslim alındı
+                  </span>
+                ) : canReceive ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-6 px-2 text-xs"
+                    title="Girdi ürünü teslim al (zimmetine geçer)"
+                    onClick={() => receiveInput(p.id)}
+                  >
+                    Teslim al
+                  </Button>
+                ) : null}
               </span>
             </li>
           ))}

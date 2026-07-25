@@ -1042,6 +1042,38 @@ export class ProcessStagesService {
           'Bu aşama başlatılamaz: girdi ürün(ler)i henüz teslim alınmadı',
         );
       }
+
+      // Products PRODUCED by io-predecessor stages (OUT → IN links) flow in as
+      // this stage's inputs without a formal consume — they gate the start
+      // too, unless some other stage consumed them. receive-input auto-links
+      // such a product onto this stage at pickup.
+      const ioLinks = await this.stageLinks.find({
+        where: { toStageId: id, kind: 'io' },
+      });
+      if (ioLinks.length > 0) {
+        const ioPreds = ioLinks.map((l) => l.fromStageId);
+        const inheritedUnreceived = await this.stages.manager
+          .getRepository(Product)
+          .count({
+            where: [
+              {
+                stageId: In(ioPreds),
+                inputReceivedAt: IsNull(),
+                consumedByStageId: IsNull(),
+              },
+              {
+                stageId: In(ioPreds),
+                inputReceivedAt: IsNull(),
+                consumedByStageId: id,
+              },
+            ],
+          });
+        if (inheritedUnreceived > 0) {
+          throw new BadRequestException(
+            'Bu aşama başlatılamaz: bağlı aşamadan gelen girdi ürün(ler)i henüz teslim alınmadı',
+          );
+        }
+      }
     }
 
     // Cannot complete until every held tool's return has been STARTED

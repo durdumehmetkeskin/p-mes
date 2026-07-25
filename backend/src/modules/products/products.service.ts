@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import type { Readable } from 'stream';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { CustodyService } from '../custody/custody.service';
 import { CustodyCloseAction } from '../custody/enums/custody-close-action.enum';
 import { CustodyItemType } from '../custody/enums/custody-item-type.enum';
@@ -20,6 +20,8 @@ import {
 } from '../notifications/notifications.service';
 import { Order } from '../project/entities/order.entity';
 import { ProcessStage } from '../project/entities/process-stage.entity';
+import { ProcessStageLink } from '../project/entities/process-stage-link.entity';
+import { ProcessStageStatus } from '../project/enums/process-stage-status.enum';
 import { ProjectsService } from '../project/projects.service';
 import { QrService } from '../qr/qr.service';
 import { QrResult } from '../qr/qr.types';
@@ -365,22 +367,55 @@ export class ProductsService {
    */
   async receiveInput(id: string, user: User): Promise<Product> {
     const product = await this.findOne(id, user); // membership scoping
-    if (!product.consumedByStageId) {
-      throw new BadRequestException('Bu ürün bir aşamanın girdisi değil.');
-    }
     if (product.inputReceivedAt) {
       throw new BadRequestException('Bu ürün zaten teslim alınmış.');
     }
-    const stage = await this.stages.findOne({
-      where: { id: product.consumedByStageId },
-    });
-    if (
-      !ProjectsService.isAdmin(user) &&
-      !(stage?.workers ?? []).some((w) => w.id === user.id)
-    ) {
-      throw new ForbiddenException(
-        'Girdi ürününü yalnızca o aşamanın çalışanı teslim alabilir.',
-      );
+    let stage: ProcessStage | null;
+    if (product.consumedByStageId) {
+      stage = await this.stages.findOne({
+        where: { id: product.consumedByStageId },
+      });
+      if (
+        !ProjectsService.isAdmin(user) &&
+        !(stage?.workers ?? []).some((w) => w.id === user.id)
+      ) {
+        throw new ForbiddenException(
+          'Girdi ürününü yalnızca o aşamanın çalışanı teslim alabilir.',
+        );
+      }
+    } else {
+      // io-inherited input: the producing stage's OUT port feeds successor
+      // stages' IN ports. Picking the product up FORMALIZES the link — pick
+      // the first not-completed io-successor the user works on (admin: any)
+      // and consume the product onto it.
+      if (!product.stageId) {
+        throw new BadRequestException('Bu ürün bir aşamanın girdisi değil.');
+      }
+      const ioLinks = await this.stages.manager
+        .getRepository(ProcessStageLink)
+        .find({ where: { fromStageId: product.stageId, kind: 'io' } });
+      if (ioLinks.length === 0) {
+        throw new BadRequestException('Bu ürün bir aşamanın girdisi değil.');
+      }
+      const successors = await this.stages.find({
+        where: { id: In(ioLinks.map((l) => l.toStageId)) },
+      });
+      const target = successors
+        .filter((s) => s.status !== ProcessStageStatus.Completed)
+        .filter(
+          (s) =>
+            ProjectsService.isAdmin(user) ||
+            (s.workers ?? []).some((w) => w.id === user.id),
+        )
+        .sort((a, b) => a.sequence - b.sequence)[0];
+      if (!target) {
+        throw new ForbiddenException(
+          'Girdi ürününü yalnızca o aşamanın çalışanı teslim alabilir.',
+        );
+      }
+      product.consumedByStage = target;
+      product.consumedByStageId = target.id;
+      stage = target;
     }
     product.inputReceivedByUserId = user.id;
     product.inputReceivedByUser = { id: user.id } as User;

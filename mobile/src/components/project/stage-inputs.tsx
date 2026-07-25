@@ -255,11 +255,13 @@ export function StageInputs({
           </View>
         ) : null}
 
-        {/* Outputs flowing in via OUT → IN connections (read-only). */}
+        {/* Outputs flowing in via OUT → IN connections. Pickup FORMALIZES the
+            io link (backend consumes the product onto this stage) — required
+            before the stage can start. */}
         {inherited.map((p) => (
           <View
             key={p.id}
-            className="gap-0.5 rounded-md border border-dashed border-info/40 p-2"
+            className="gap-1 rounded-md border border-dashed border-info/40 p-2"
           >
             <Text className="text-sm text-foreground">
               <Text className="font-mono text-xs text-primary">{p.code}</Text> ·{" "}
@@ -271,6 +273,28 @@ export function StageInputs({
                 output of "{p.stage?.name ?? "connected stage"}"
               </Text>
             </View>
+            {p.inputReceivedAt ? (
+              <Text className="text-xs text-muted-foreground">
+                Teslim alındı
+                {p.inputReceivedByUser?.name
+                  ? `: ${p.inputReceivedByUser.name}`
+                  : ""}
+              </Text>
+            ) : canReceive ? (
+              <Pressable
+                onPress={() => receiveInput(p.id)}
+                disabled={busyId === p.id}
+                className="mt-1 items-center rounded-md border border-primary bg-primary px-3 py-2 active:opacity-80"
+              >
+                <Text className="text-xs text-primary-foreground">
+                  Teslim al (zimmetine geçer)
+                </Text>
+              </Pressable>
+            ) : (
+              <Text className="text-xs text-warning">
+                Henüz teslim alınmadı — aşama başlatılamaz.
+              </Text>
+            )}
           </View>
         ))}
 
