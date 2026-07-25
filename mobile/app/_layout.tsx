@@ -21,6 +21,7 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { Toaster } from "sonner-native";
 
+import { ErrorAlertHost } from "@/components/ui/error-alert";
 import { accessControlProvider } from "@/providers/access-control";
 import { authProvider } from "@/providers/auth";
 import { dataProvider } from "@/providers/data";
@@ -157,6 +158,8 @@ export default function RootLayout() {
               <StatusBar style="light" />
               <Slot />
               <Toaster theme="dark" />
+              {/* Themed error dialog (replaces the OS Alert for failures). */}
+              <ErrorAlertHost />
             </Refine>
           </BottomSheetModalProvider>
         </SafeAreaProvider>

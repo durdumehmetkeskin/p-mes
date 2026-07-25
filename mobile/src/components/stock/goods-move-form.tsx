@@ -14,6 +14,7 @@ import {
   RelationSelectField,
   TextField,
 } from "@/components/refine-ui/form";
+import { showApiError } from "@/components/ui/error-alert";
 import { axiosInstance } from "@/providers/axios";
 import { labelLot, labelMaterial, labelRack, labelWarehouse } from "@/lib/labels";
 
@@ -65,7 +66,7 @@ export function GoodsMoveForm({
       toast.success(`${title} recorded`);
       if (router.canGoBack()) router.back();
     } catch (e) {
-      toast.error(errMsg(e));
+      showApiError(e, "Kayıt başarısız");
     } finally {
       setSubmitting(false);
     }

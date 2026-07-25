@@ -33,6 +33,7 @@ import {
   type SelectOption,
 } from "@/components/ui/searchable-select";
 import { getWarehouseAccess } from "@/providers/access-control";
+import { showApiError } from "@/components/ui/error-alert";
 import { axiosInstance } from "@/providers/axios";
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { colors } from "@/lib/theme";
@@ -168,10 +169,7 @@ export default function MyWarehouseScreen() {
         refreshAll();
         Alert.alert("Done", ok);
       })
-      .catch((err: { response?: { data?: { message?: string | string[] } } }) => {
-        const msg = err?.response?.data?.message;
-        Alert.alert("Failed", Array.isArray(msg) ? msg.join(", ") : (msg ?? "Error"));
-      });
+      .catch((err: unknown) => showApiError(err));
 
   // "Prepare" flow: the sheet stays open while the responsible physically
   // prepares the material; Confirm inside it fires confirm-reserve.
@@ -192,9 +190,7 @@ export default function MyWarehouseScreen() {
       setPrepareItem(null);
       Alert.alert("Done", "Prepared");
     } catch (err) {
-      const msg = (err as { response?: { data?: { message?: string | string[] } } })
-        ?.response?.data?.message;
-      Alert.alert("Failed", Array.isArray(msg) ? msg.join(", ") : (msg ?? "Error"));
+      showApiError(err);
     } finally {
       setPreparing(false);
     }

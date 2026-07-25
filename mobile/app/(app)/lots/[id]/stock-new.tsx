@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { Alert, ScrollView, Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import { type BaseRecord, useInvalidate, useOne } from "@refinedev/core";
 import { useLocalSearchParams, useRouter } from "expo-router";
 
 import { Screen } from "@/components/refine-ui/screen";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { showApiError, showErrorAlert } from "@/components/ui/error-alert";
 import { axiosInstance } from "@/providers/axios";
 
 const REFRESH = ["stock-items", "inventory-balances", "lots"];
@@ -62,7 +63,10 @@ export default function AddStockItemScreen() {
   const submit = () => {
     const qty = Number(quantity);
     if (!rack || !qty || qty <= 0) {
-      Alert.alert("Missing", "A positive quantity is required.");
+      showErrorAlert({
+        title: "Eksik bilgi",
+        messages: ["Pozitif bir miktar girilmelidir."],
+      });
       return;
     }
     setBusy(true);
@@ -73,10 +77,7 @@ export default function AddStockItemScreen() {
         REFRESH.forEach((r) => invalidate({ resource: r, invalidates: ["list"] }));
         router.back();
       })
-      .catch((err: { response?: { data?: { message?: string | string[] } } }) => {
-        const msg = err?.response?.data?.message;
-        Alert.alert("Failed", Array.isArray(msg) ? msg.join(", ") : (msg ?? "Error"));
-      })
+      .catch((err: unknown) => showApiError(err))
       .finally(() => setBusy(false));
   };
 

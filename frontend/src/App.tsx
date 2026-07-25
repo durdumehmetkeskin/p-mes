@@ -40,6 +40,7 @@ import "./App.css";
 import { AccessGuard } from "./components/access-guard";
 import { ErrorComponent } from "./components/refine-ui/layout/error-component";
 import { Layout } from "./components/refine-ui/layout/layout";
+import { ErrorAlertHost } from "./components/refine-ui/notification/error-alert";
 import { Toaster } from "./components/refine-ui/notification/toaster";
 import { useNotificationProvider } from "./components/refine-ui/notification/use-notification-provider";
 import { ThemeProvider } from "./components/refine-ui/theme/theme-provider";
@@ -786,6 +787,8 @@ function App() {
             </Routes>
 
             <Toaster />
+            {/* Themed error dialog — every error notification opens here. */}
+            <ErrorAlertHost />
             <RefineKbar />
             <UnsavedChangesNotifier />
             <DocumentTitleHandler />

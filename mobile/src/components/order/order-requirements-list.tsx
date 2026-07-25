@@ -21,6 +21,7 @@ import { useRouter } from "expo-router";
 
 import { confirmDelete } from "@/components/refine-ui/confirm";
 import { Icon } from "@/components/ui/icon";
+import { showApiError } from "@/components/ui/error-alert";
 import { axiosInstance } from "@/providers/axios";
 import { useCanEditProject } from "@/hooks/use-can-edit-project";
 import { colors } from "@/lib/theme";
@@ -128,10 +129,7 @@ export function OrderRequirementsList({
       }
       refresh();
     } catch (e) {
-      const msg =
-        (e as { response?: { data?: { message?: string } } }).response?.data
-          ?.message ?? "Reservation failed";
-      Alert.alert("Reserve", msg);
+      showApiError(e, "Rezervasyon başarısız");
     } finally {
       setReservingId(null);
     }

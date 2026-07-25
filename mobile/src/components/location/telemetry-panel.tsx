@@ -11,6 +11,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { downloadAndShare } from "@/lib/download";
+import { showApiError } from "@/components/ui/error-alert";
 import { axiosInstance } from "@/providers/axios";
 import { colors } from "@/lib/theme";
 
@@ -239,8 +240,8 @@ export function TelemetryPanel({ locationId }: { locationId: string }) {
       toast.success("Uploaded");
       await loadMeta();
       loadSeries();
-    } catch {
-      toast.error("Upload failed");
+    } catch (e) {
+      showApiError(e, "Yükleme başarısız");
     }
   };
 
@@ -250,8 +251,8 @@ export function TelemetryPanel({ locationId }: { locationId: string }) {
         await axiosInstance.delete(`/location-data-files/${f.id}`);
         await loadMeta();
         loadSeries();
-      } catch {
-        toast.error("Delete failed");
+      } catch (e) {
+        showApiError(e, "Silme başarısız");
       }
     });
 

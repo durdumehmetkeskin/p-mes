@@ -1,16 +1,10 @@
-﻿import type { AxiosError } from "axios";
 import { useInvalidate } from "@refinedev/core";
 import { useRouter } from "expo-router";
 import { toast } from "sonner-native";
 
-export const TOOL_INVALIDATE = ["tools", "tool-status-history"];
+import { showApiError } from "@/components/ui/error-alert";
 
-export function toolErr(e: unknown): string {
-  const m = (e as AxiosError<{ message?: string | string[] }>)?.response?.data
-    ?.message;
-  if (Array.isArray(m)) return m.join(", ");
-  return m ?? "Action failed";
-}
+export const TOOL_INVALIDATE = ["tools", "tool-status-history"];
 
 /**
  * Runs a tool action (axios call), invalidates the tool detail + history lists,
@@ -30,7 +24,7 @@ export function useToolAction(id: string) {
       toast.success(successMsg);
       if (router.canGoBack()) router.back();
     } catch (e) {
-      toast.error(toolErr(e));
+      showApiError(e, "Araç işlemi başarısız");
     }
   };
 }

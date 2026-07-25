@@ -6,6 +6,7 @@ import { toast } from "sonner-native";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { usePermissions } from "@/hooks/use-permissions";
+import { showApiError } from "@/components/ui/error-alert";
 import { axiosInstance } from "@/providers/axios";
 
 interface PermDef {
@@ -77,8 +78,8 @@ export function RolePermissionsEditor({
       });
       invalidate({ resource: "roles", invalidates: ["list", "detail"], id: roleId });
       toast.success("Permissions updated");
-    } catch {
-      toast.error("Could not save permissions");
+    } catch (e) {
+      showApiError(e, "Yetkiler kaydedilemedi");
     } finally {
       setSaving(false);
     }

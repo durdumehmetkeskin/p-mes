@@ -29,6 +29,7 @@ import {
 import { FORMAT_OPTIONS } from "@/components/report/report-constants";
 import { downloadAndShare } from "@/lib/download";
 import { labelWarehouse } from "@/lib/labels";
+import { showApiError, showErrorAlert } from "@/components/ui/error-alert";
 import { axiosInstance } from "@/providers/axios";
 import { colors } from "@/lib/theme";
 
@@ -210,7 +211,7 @@ export default function ReportCenterScreen() {
       .filter((f) => f.required && !params[f.name])
       .map((f) => f.label);
     if (missing.length) {
-      toast.error(`Missing: ${missing.join(", ")}`);
+      showErrorAlert({ title: "Eksik parametre", messages: [`Doldurulması zorunlu alanlar: ${missing.join(", ")}`] });
       return;
     }
     setGenerating(true);
@@ -223,8 +224,8 @@ export default function ReportCenterScreen() {
       });
       toast.success("Report generated");
       loadHistory();
-    } catch {
-      toast.error("Could not generate report");
+    } catch (e) {
+      showApiError(e, "Rapor oluşturulamadı");
     } finally {
       setGenerating(false);
     }
@@ -250,8 +251,8 @@ export default function ReportCenterScreen() {
         try {
           await axiosInstance.delete(`/reports/history/${rec.id}`);
           loadHistory();
-        } catch {
-          toast.error("Delete failed");
+        } catch (e) {
+          showApiError(e, "Silme başarısız");
         }
       },
     });
@@ -271,8 +272,8 @@ export default function ReportCenterScreen() {
       renameRef.current?.dismiss();
       setRenameId(null);
       loadHistory();
-    } catch {
-      toast.error("Rename failed");
+    } catch (e) {
+      showApiError(e, "Yeniden adlandırma başarısız");
     }
   };
 

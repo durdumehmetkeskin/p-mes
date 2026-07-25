@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { showApiError, showErrorAlert } from "@/components/ui/error-alert";
 import { axiosInstance } from "@/providers/axios";
 import { colors } from "@/lib/theme";
 
@@ -66,7 +67,7 @@ export default function WorkflowBuilderScreen() {
 
   const save = async () => {
     if (!name.trim()) {
-      toast.error("Name is required");
+      showErrorAlert({ title: "Eksik bilgi", messages: ["Şablon adı gereklidir."] });
       return;
     }
     setSaving(true);
@@ -82,8 +83,8 @@ export default function WorkflowBuilderScreen() {
       invalidate({ resource: "workflow-templates", invalidates: ["list"] });
       toast.success(isEdit ? "Template saved" : "Template created");
       if (router.canGoBack()) router.back();
-    } catch {
-      toast.error("Save failed");
+    } catch (e) {
+      showApiError(e, "Şablon kaydedilemedi");
     } finally {
       setSaving(false);
     }

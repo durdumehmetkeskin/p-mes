@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Alert, Pressable, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import {
   type BaseRecord,
   useApiUrl,
@@ -10,6 +10,7 @@ import { Calendar } from "react-native-calendars";
 import { CalendarClock, Trash2 } from "lucide-react-native";
 
 import { Can } from "@/components/can";
+import { showApiError } from "@/components/ui/error-alert";
 import { SectionLabel } from "@/components/refine-ui/field-row";
 import { StatusBadge } from "@/components/refine-ui/status-badge";
 import { Button } from "@/components/ui/button";
@@ -227,10 +228,7 @@ export function StageTools({
 
   const canSubmit = Boolean(toolId && hasWindow) && rangeValid && !busy;
 
-  const fail = (err: { response?: { data?: { message?: string | string[] } } }) => {
-    const msg = err?.response?.data?.message;
-    Alert.alert("Failed", Array.isArray(msg) ? msg.join(", ") : (msg ?? "Error"));
-  };
+  const fail = (err: unknown) => showApiError(err);
 
   const submit = async () => {
     if (!canSubmit || !toolId || !reservedFrom || !reservedTo) return;

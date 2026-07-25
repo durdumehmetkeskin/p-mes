@@ -24,6 +24,7 @@ import { useIsAdmin } from "@/hooks/use-is-admin";
 import { usePermissions } from "@/hooks/use-permissions";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { showApiError } from "@/components/ui/error-alert";
 import { axiosInstance } from "@/providers/axios";
 import { colors } from "@/lib/theme";
 import { stageUnlocked } from "@/lib/stage-lock";
@@ -141,12 +142,7 @@ export default function StageDetailScreen() {
       }
     } catch (err) {
       // Surface the backend gate messages (teslim alınmadı / iade edilmeli…).
-      const msg = (
-        err as { response?: { data?: { message?: string | string[] } } }
-      )?.response?.data?.message;
-      toast.error(
-        Array.isArray(msg) ? msg.join(", ") : (msg ?? "Could not change status"),
-      );
+      showApiError(err, "Durum değiştirilemedi");
     }
   };
 

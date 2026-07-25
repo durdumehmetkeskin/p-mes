@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Alert, Pressable, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import { useApiUrl, useCustom } from "@refinedev/core";
 import { ArrowRightToLine, Undo2 } from "lucide-react-native";
 
 import { confirm } from "@/components/refine-ui/confirm";
+import { showApiError, showErrorAlert } from "@/components/ui/error-alert";
 import { SectionLabel } from "@/components/refine-ui/field-row";
 import { StatusBadge } from "@/components/refine-ui/status-badge";
 import { Icon } from "@/components/ui/icon";
@@ -97,16 +98,16 @@ export function StageStockItems({
   const refreshBoth = () =>
     Promise.all([query.refetch(), poolQuery.refetch()]);
 
-  const fail = (err: { response?: { data?: { message?: string | string[] } } }) => {
-    const msg = err?.response?.data?.message;
-    Alert.alert("Failed", Array.isArray(msg) ? msg.join(", ") : (msg ?? "Error"));
-  };
+  const fail = (err: unknown) => showApiError(err);
 
   const assign = async (it: PoolItem) => {
     const raw = assignQty[it.id];
     const qty = raw === undefined || raw === "" ? it.quantity : Number(raw);
     if (!(qty > 0) || qty > it.quantity) {
-      Alert.alert("Invalid quantity", `Must be > 0 and at most ${it.quantity}`);
+      showErrorAlert({
+        title: "Geçersiz miktar",
+        messages: [`Miktar 0'dan büyük ve en fazla ${it.quantity} olmalı.`],
+      });
       return;
     }
     setBusyId(it.id);

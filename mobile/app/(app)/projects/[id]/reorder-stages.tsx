@@ -12,6 +12,7 @@ import { toast } from "sonner-native";
 
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
+import { showApiError } from "@/components/ui/error-alert";
 import { axiosInstance } from "@/providers/axios";
 import { colors } from "@/lib/theme";
 
@@ -51,8 +52,8 @@ export default function ReorderStagesScreen() {
       invalidate({ resource: "processes", invalidates: ["list", "detail"], id: processId });
       toast.success("Stages reordered");
       if (router.canGoBack()) router.back();
-    } catch {
-      toast.error("Reorder failed");
+    } catch (e) {
+      showApiError(e, "Sıralama kaydedilemedi");
     } finally {
       setSaving(false);
     }

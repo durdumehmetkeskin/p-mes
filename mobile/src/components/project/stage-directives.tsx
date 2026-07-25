@@ -4,6 +4,7 @@ import { toast } from "sonner-native";
 
 import { SectionLabel } from "@/components/refine-ui/field-row";
 import { Button } from "@/components/ui/button";
+import { showApiError } from "@/components/ui/error-alert";
 import { axiosInstance } from "@/providers/axios";
 import { colors } from "@/lib/theme";
 
@@ -37,8 +38,8 @@ export function StageDirectives({
       setEditing(false);
       toast.success("Directives saved");
       onChanged?.();
-    } catch {
-      toast.error("Could not save directives");
+    } catch (e) {
+      showApiError(e, "Direktifler kaydedilemedi");
     } finally {
       setBusy(false);
     }

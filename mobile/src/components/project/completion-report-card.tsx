@@ -5,6 +5,7 @@ import { toast } from "sonner-native";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { showApiError } from "@/components/ui/error-alert";
 import { axiosInstance } from "@/providers/axios";
 
 interface ReportData {
@@ -59,8 +60,8 @@ export function CompletionReportCard({
       });
       await load();
       toast.success("Report saved");
-    } catch {
-      toast.error("Could not save report");
+    } catch (e) {
+      showApiError(e, "Rapor kaydedilemedi");
     } finally {
       setBusy(false);
     }

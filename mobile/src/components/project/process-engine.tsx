@@ -21,6 +21,7 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { ActionMenu } from "@/components/ui/action-menu";
 import { Icon } from "@/components/ui/icon";
+import { showApiError } from "@/components/ui/error-alert";
 import { axiosInstance } from "@/providers/axios";
 import { colors } from "@/lib/theme";
 import { stageUnlocked } from "@/lib/stage-lock";
@@ -135,7 +136,7 @@ function ProcessCard({
       refresh();
       toast.success(msg);
     } catch (err) {
-      toast.error(apiErrMsg(err, "Action failed"));
+      showApiError(err, "İşlem başarısız");
     }
   };
 

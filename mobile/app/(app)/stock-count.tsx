@@ -15,6 +15,7 @@ import {
   TextField,
 } from "@/components/refine-ui/form";
 import { STOCK_INVALIDATE } from "@/components/stock/goods-move-form";
+import { showApiError } from "@/components/ui/error-alert";
 import { axiosInstance } from "@/providers/axios";
 import { labelLot, labelMaterial, labelRack, labelWarehouse } from "@/lib/labels";
 
@@ -62,7 +63,7 @@ export default function StockCountScreen() {
         toast.success("Count matches — no adjustment");
       }
     } catch (e) {
-      toast.error(errMsg(e));
+      showApiError(e, "Sayım kaydedilemedi");
     } finally {
       setSubmitting(false);
     }

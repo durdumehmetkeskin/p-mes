@@ -12,6 +12,7 @@ import { StatusBadge } from "@/components/refine-ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Skeleton } from "@/components/ui/skeleton";
+import { showApiError } from "@/components/ui/error-alert";
 import { axiosInstance } from "@/providers/axios";
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { colors } from "@/lib/theme";
@@ -74,10 +75,7 @@ export default function LotDetailScreen() {
         .then(() => {
           REFRESH.forEach((r) => invalidate({ resource: r, invalidates: ["list"] }));
         })
-        .catch((err: { response?: { data?: { message?: string | string[] } } }) => {
-          const msg = err?.response?.data?.message;
-          Alert.alert("Failed", Array.isArray(msg) ? msg.join(", ") : (msg ?? "Error"));
-        });
+        .catch((err: unknown) => showApiError(err));
     const metas = {
       release: { title: "Release reservation", body: "Return this to available?", cta: "Release", style: "destructive" as const },
       consume: { title: "Consume stock item", body: "Issue this stock out?", cta: "Consume", style: "destructive" as const },

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Alert, ScrollView, Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import { type BaseRecord, useList, useOne } from "@refinedev/core";
 import { useLocalSearchParams, useRouter } from "expo-router";
 
@@ -13,6 +13,7 @@ import {
   type SelectOption,
 } from "@/components/ui/searchable-select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { showApiError } from "@/components/ui/error-alert";
 import { axiosInstance } from "@/providers/axios";
 
 interface Product extends BaseRecord {
@@ -82,10 +83,7 @@ export default function ProductHandoverScreen() {
       .join(" · "),
   }));
 
-  const fail = (err: { response?: { data?: { message?: string | string[] } } }) => {
-    const msg = err?.response?.data?.message;
-    Alert.alert("Failed", Array.isArray(msg) ? msg.join(", ") : (msg ?? "Error"));
-  };
+  const fail = (err: unknown) => showApiError(err);
 
   const store = () => {
     if (!rackId) return;

@@ -11,6 +11,7 @@ import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { showApiError } from "@/components/ui/error-alert";
 import { axiosInstance } from "@/providers/axios";
 import { colors } from "@/lib/theme";
 import { fmtWall } from "./day-slot-strip";
@@ -226,9 +227,7 @@ export function StageReservation({
       toast.success(editId ? "Reservation updated" : "Section reserved");
       onChanged?.();
     } catch (err) {
-      const msg = (err as { response?: { data?: { message?: string } } })
-        ?.response?.data?.message;
-      toast.error(typeof msg === "string" ? msg : "Could not reserve");
+      showApiError(err, "Rezervasyon yapılamadı");
     } finally {
       setBusy(false);
     }
@@ -251,8 +250,8 @@ export function StageReservation({
       invalidate({ resource: "section-reservations", invalidates: ["list"] });
       await Promise.all([mineQuery.refetch(), resvQuery.refetch()]);
       onChanged?.();
-    } catch {
-      toast.error("Could not remove reservation");
+    } catch (err) {
+      showApiError(err, "Rezervasyon kaldırılamadı");
     }
   };
 

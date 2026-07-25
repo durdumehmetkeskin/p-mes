@@ -15,6 +15,7 @@ import {
 import { Screen } from "@/components/refine-ui/screen";
 import { Button } from "@/components/ui/button";
 import { usePermissions } from "@/hooks/use-permissions";
+import { showApiError } from "@/components/ui/error-alert";
 import { axiosInstance } from "@/providers/axios";
 
 /**
@@ -56,12 +57,7 @@ export default function ProductNewScreen() {
       toast.success("Product recorded");
       close();
     } catch (err) {
-      const msg = (
-        err as { response?: { data?: { message?: string | string[] } } }
-      )?.response?.data?.message;
-      toast.error(
-        Array.isArray(msg) ? msg.join(", ") : (msg ?? "Could not save product"),
-      );
+      showApiError(err, "Ürün kaydedilemedi");
     } finally {
       setSaving(false);
     }

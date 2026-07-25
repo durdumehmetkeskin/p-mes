@@ -1,3 +1,4 @@
+import { showErrorAlert } from "@/components/refine-ui/notification/error-alert";
 import { UndoableNotification } from "@/components/refine-ui/notification/undoable-notification";
 import type { NotificationProvider } from "@refinedev/core";
 import { toast } from "sonner";
@@ -21,13 +22,20 @@ export function useNotificationProvider(): NotificationProvider {
           });
           return;
 
-        case "error":
-          toast.error(message, {
-            id: key,
-            description,
-            richColors: true,
+        case "error": {
+          // Errors open the themed blocking dialog with the full detail, not a
+          // transient toast (mutation failures must be read, not missed).
+          const detail = [message, description].filter(
+            (m): m is string => Boolean(m) && m !== "Error",
+          );
+          showErrorAlert({
+            title: "İşlem başarısız",
+            messages: detail.length
+              ? detail
+              : ["Beklenmeyen bir hata oluştu. Lütfen tekrar deneyin."],
           });
           return;
+        }
 
         case "progress": {
           const toastId = key || Date.now();

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Alert, ScrollView, Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import { type BaseRecord, useInvalidate, useList, useOne } from "@refinedev/core";
 import { useLocalSearchParams, useRouter } from "expo-router";
 
@@ -10,6 +10,7 @@ import {
   SearchableSelect,
   type SelectOption,
 } from "@/components/ui/searchable-select";
+import { showApiError, showErrorAlert } from "@/components/ui/error-alert";
 import { axiosInstance } from "@/providers/axios";
 
 const REFRESH = ["stock-items", "inventory-balances", "lots"];
@@ -86,11 +87,17 @@ export default function ReserveStockScreen() {
   const submit = () => {
     const qty = Number(quantity);
     if (!qty || qty <= 0 || qty > max) {
-      Alert.alert("Quantity", `Enter a quantity between 1 and ${max}.`);
+      showErrorAlert({
+        title: "Geçersiz miktar",
+        messages: [`1 ile ${max} arasında bir miktar girin.`],
+      });
       return;
     }
     if (!orderId) {
-      Alert.alert("Order", "Select an order.");
+      showErrorAlert({
+        title: "Eksik bilgi",
+        messages: ["Bir sipariş seçin."],
+      });
       return;
     }
     setBusy(true);
@@ -104,10 +111,7 @@ export default function ReserveStockScreen() {
         REFRESH.forEach((r) => invalidate({ resource: r, invalidates: ["list"] }));
         router.back();
       })
-      .catch((err: { response?: { data?: { message?: string | string[] } } }) => {
-        const msg = err?.response?.data?.message;
-        Alert.alert("Failed", Array.isArray(msg) ? msg.join(", ") : (msg ?? "Error"));
-      })
+      .catch((err: unknown) => showApiError(err))
       .finally(() => setBusy(false));
   };
 

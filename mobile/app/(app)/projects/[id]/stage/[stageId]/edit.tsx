@@ -14,6 +14,7 @@ import {
 import { FormScreen } from "@/components/refine-ui/form-screen";
 import { useTeamMembers } from "@/components/project/use-team-members";
 import { Skeleton } from "@/components/ui/skeleton";
+import { showApiError } from "@/components/ui/error-alert";
 import { axiosInstance } from "@/providers/axios";
 
 interface Stage extends BaseRecord {
@@ -100,12 +101,7 @@ export default function StageEditScreen() {
       toast.success("Stage saved");
       if (router.canGoBack()) router.back();
     } catch (err) {
-      const msg = (
-        err as { response?: { data?: { message?: string | string[] } } }
-      )?.response?.data?.message;
-      toast.error(
-        Array.isArray(msg) ? msg.join(", ") : (msg ?? "Could not save stage"),
-      );
+      showApiError(err, "Aşama kaydedilemedi");
     } finally {
       setSaving(false);
     }

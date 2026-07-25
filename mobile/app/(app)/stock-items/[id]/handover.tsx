@@ -13,6 +13,7 @@ import {
   type SelectOption,
 } from "@/components/ui/searchable-select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { showApiError, showErrorAlert } from "@/components/ui/error-alert";
 import { axiosInstance } from "@/providers/axios";
 
 const REFRESH = ["stock-items", "inventory-balances", "lots"];
@@ -89,10 +90,7 @@ export default function StockItemHandoverScreen() {
     REFRESH.forEach((r) => invalidate({ resource: r, invalidates: ["list"] }));
     if (router.canGoBack()) router.back();
   };
-  const fail = (err: { response?: { data?: { message?: string | string[] } } }) => {
-    const msg = err?.response?.data?.message;
-    Alert.alert("Failed", Array.isArray(msg) ? msg.join(", ") : (msg ?? "Error"));
-  };
+  const fail = (err: unknown) => showApiError(err);
 
   const run = (verb: "deliver" | "receive" | "return" | "consume-delivered") => {
     setBusy(true);
@@ -107,18 +105,24 @@ export default function StockItemHandoverScreen() {
     const qty = Number(returnQty);
     const max = item?.quantity ?? 0;
     if (!qty || qty <= 0) {
-      Alert.alert("Missing", "Enter the weighed quantity.");
+      showErrorAlert({
+        title: "Eksik bilgi",
+        messages: ["Tartılan miktarı girin."],
+      });
       return;
     }
     if (qty > max) {
-      Alert.alert(
-        "Too much",
-        `At most ${max} can be returned (the delivered amount).`,
-      );
+      showErrorAlert({
+        title: "Miktar fazla",
+        messages: [`En fazla ${max} iade edilebilir (teslim edilen miktar).`],
+      });
       return;
     }
     if (!returnRackId) {
-      Alert.alert("Missing", "Select the rack to shelve it on.");
+      showErrorAlert({
+        title: "Eksik bilgi",
+        messages: ["Rafa yerleştirmek için bir raf seçin."],
+      });
       return;
     }
     setBusy(true);

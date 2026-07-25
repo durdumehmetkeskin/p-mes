@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ActionMenu } from "@/components/ui/action-menu";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { showApiError } from "@/components/ui/error-alert";
 import { axiosInstance } from "@/providers/axios";
 
 interface StageCard {
@@ -95,10 +96,7 @@ export default function BoardScreen() {
       await load();
       toast.success("Status updated");
     } catch (e: unknown) {
-      const msg =
-        (e as { response?: { data?: { message?: string } } })?.response?.data
-          ?.message ?? "Could not change status";
-      toast.error(String(msg));
+      showApiError(e, "Durum değiştirilemedi");
       await load();
     }
   };

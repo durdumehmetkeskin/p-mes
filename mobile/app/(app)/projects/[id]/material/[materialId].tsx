@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Alert,
   Pressable,
   ScrollView,
   Text,
@@ -16,6 +15,7 @@ import { Screen } from "@/components/refine-ui/screen";
 import { StatusBadge } from "@/components/refine-ui/status-badge";
 import { Icon } from "@/components/ui/icon";
 import { Skeleton } from "@/components/ui/skeleton";
+import { showApiError, showErrorAlert } from "@/components/ui/error-alert";
 import { axiosInstance } from "@/providers/axios";
 import { colors } from "@/lib/theme";
 
@@ -109,7 +109,10 @@ export default function ProjectMaterialDetailScreen() {
   const saveReorder = async () => {
     const value = Number(reorderInput);
     if (Number.isNaN(value) || value < 0) {
-      Alert.alert("Reorder", "Enter a valid number (0 clears it).");
+      showErrorAlert({
+        title: "Geçersiz değer",
+        messages: ["Geçerli bir sayı girin (0 seviyeyi temizler)."],
+      });
       return;
     }
     setSavingReorder(true);
@@ -122,10 +125,7 @@ export default function ProjectMaterialDetailScreen() {
       setEditingReorder(false);
       fetchDetail();
     } catch (e) {
-      const msg =
-        (e as { response?: { data?: { message?: string } } }).response?.data
-          ?.message ?? "Could not save reorder level";
-      Alert.alert("Reorder", msg);
+      showApiError(e, "Kritik stok seviyesi kaydedilemedi");
     } finally {
       setSavingReorder(false);
     }

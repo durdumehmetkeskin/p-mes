@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/searchable-select";
 import { usePermissions } from "@/hooks/use-permissions";
 import { downloadAndShare } from "@/lib/download";
+import { showApiError } from "@/components/ui/error-alert";
 import { axiosInstance } from "@/providers/axios";
 import { colors } from "@/lib/theme";
 
@@ -135,7 +136,7 @@ export function StageInputs({
       await fn();
       await refresh();
     } catch (e) {
-      toast.error(errMsg(e, fallback));
+      showApiError(e, fallback);
     } finally {
       setBusyId(null);
     }

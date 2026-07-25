@@ -19,6 +19,7 @@ import {
 import { useRouter } from "expo-router";
 import { toast } from "sonner-native";
 
+import { showApiError } from "@/components/ui/error-alert";
 import { axiosInstance } from "@/providers/axios";
 
 import { AttachmentsPanel } from "@/components/attachments/attachments-panel";
@@ -325,8 +326,8 @@ export function WorkflowTab({ projectId }: { projectId: string }) {
       });
       invalidate({ resource: "workflow-templates", invalidates: ["list"] });
       toast.success("Template duplicated");
-    } catch {
-      toast.error("Duplicate failed");
+    } catch (e) {
+      showApiError(e, "Şablon kopyalanamadı");
     }
   };
 

@@ -9,6 +9,7 @@ import { toast } from "sonner-native";
 
 import { FormScreen } from "@/components/refine-ui/form-screen";
 import { SwitchField, TextField } from "@/components/refine-ui/form";
+import { showErrorAlert } from "@/components/ui/error-alert";
 import { axiosInstance } from "@/providers/axios";
 
 /**
@@ -28,7 +29,7 @@ export default function ContactCreateScreen() {
 
   const onSubmit = handleSubmit((v) => {
     if (!companyId) {
-      toast.error("No customer linked to this project");
+      showErrorAlert({ title: "Kayıt yapılamadı", messages: ["Bu projeye bağlı bir müşteri yok."] });
       return;
     }
     setSubmitting(true);

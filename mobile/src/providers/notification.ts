@@ -1,6 +1,8 @@
 import type { NotificationProvider } from "@refinedev/core";
 import { toast } from "sonner-native";
 
+import { showErrorAlert } from "@/components/ui/error-alert";
+
 /**
  * Refine notificationProvider over sonner-native (the RN analogue of the web's
  * sonner). Handles success/error toasts and the undoable-delete "progress"
@@ -25,7 +27,17 @@ export const notificationProvider: NotificationProvider = {
     if (type === "success") {
       toast.success(message, opts);
     } else if (type === "error") {
-      toast.error(message, opts);
+      // Errors get the themed blocking dialog with the full detail, not a
+      // transient toast (mutation failures must be read, not missed).
+      const detail = [message, description].filter(
+        (m): m is string => Boolean(m) && m !== "Error",
+      );
+      showErrorAlert({
+        title: "İşlem başarısız",
+        messages: detail.length
+          ? detail
+          : ["Beklenmeyen bir hata oluştu. Lütfen tekrar deneyin."],
+      });
     } else {
       toast(message, opts);
     }

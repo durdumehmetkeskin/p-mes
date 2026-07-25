@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Alert, ScrollView, Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import {
   type BaseRecord,
   useApiUrl,
@@ -14,6 +14,7 @@ import { Screen } from "@/components/refine-ui/screen";
 import { StatusBadge } from "@/components/refine-ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { showApiError } from "@/components/ui/error-alert";
 import { axiosInstance } from "@/providers/axios";
 
 interface Tool extends BaseRecord {
@@ -69,10 +70,7 @@ export default function ToolHandoverScreen() {
         invalidate({ resource: "tools", invalidates: ["list", "detail"] });
         query.refetch();
       })
-      .catch((err: { response?: { data?: { message?: string | string[] } } }) => {
-        const msg = err?.response?.data?.message;
-        Alert.alert("Failed", Array.isArray(msg) ? msg.join(", ") : (msg ?? "Error"));
-      })
+      .catch((err: unknown) => showApiError(err))
       .finally(() => setBusy(false));
   };
 

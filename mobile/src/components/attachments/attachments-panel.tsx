@@ -11,6 +11,7 @@ import { confirmDelete } from "@/components/refine-ui/confirm";
 import { ActionMenu } from "@/components/ui/action-menu";
 import { Icon } from "@/components/ui/icon";
 import { downloadAndShare } from "@/lib/download";
+import { showApiError } from "@/components/ui/error-alert";
 import { axiosInstance } from "@/providers/axios";
 import { colors } from "@/lib/theme";
 
@@ -80,8 +81,8 @@ export function AttachmentsPanel({
       });
       toast.success("Uploaded");
       await load();
-    } catch {
-      toast.error("Upload failed");
+    } catch (e) {
+      showApiError(e, "Yükleme başarısız");
     } finally {
       setBusy(false);
     }
@@ -128,8 +129,8 @@ export function AttachmentsPanel({
       try {
         await axiosInstance.delete(`/attachments/${att.id}`);
         await load();
-      } catch {
-        toast.error("Delete failed");
+      } catch (e) {
+        showApiError(e, "Silme başarısız");
       }
     });
 
