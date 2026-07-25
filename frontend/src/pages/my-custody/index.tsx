@@ -15,6 +15,8 @@ import { axiosInstance } from "@/providers/axios";
 interface PendingTool extends MyTool {
   reservedFrom: string | null;
   reservedTo: string | null;
+  /** Where the tool sits (warehouse / zone / rack). */
+  location?: string | null;
 }
 
 interface CustodyHistoryRecord {
@@ -160,7 +162,9 @@ export const MyCustodyPage = () => {
                             </span>
                             <span className="block truncate text-xs text-muted-foreground">
                               {it.lot?.lotNumber ?? "—"}
-                              {it.warehouse?.code ? ` · ${it.warehouse.code}` : ""}
+                              {it.warehouse?.code
+                                ? ` · Konum: ${[it.warehouse.code, it.rack?.code].filter(Boolean).join(" / ")}`
+                                : ""}
                               {it.stageName ? ` · ${it.stageName}` : ""}
                               {it.orderNumber ? ` · ${it.orderNumber}` : ""}
                             </span>
@@ -197,6 +201,7 @@ export const MyCustodyPage = () => {
                             </span>
                             <span className="block truncate text-xs text-muted-foreground">
                               {t.stageName ? `Aşama: ${t.stageName}` : ""}
+                              {t.location ? ` · Konum: ${t.location}` : ""}
                               {t.reservedFrom
                                 ? ` · ${fmt(t.reservedFrom)} → ${fmt(t.reservedTo)}`
                                 : ""}
@@ -231,6 +236,7 @@ export const MyCustodyPage = () => {
                             </span>
                             <span className="block truncate text-xs text-muted-foreground">
                               {p.stageName ? `Girdi: ${p.stageName}` : ""}
+                              {p.location ? ` · Konum: ${p.location}` : ""}
                             </span>
                           </span>
                           <span className="shrink-0 font-mono text-xs">

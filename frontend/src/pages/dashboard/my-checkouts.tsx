@@ -13,6 +13,7 @@ export interface MyStockItem {
   material: { code: string; name: string; unit: string | null } | null;
   lot: { lotNumber: string } | null;
   warehouse: { code: string } | null;
+  rack?: { code: string } | null;
   orderNumber: string | null;
   stageName: string | null;
 }
@@ -33,6 +34,8 @@ export interface MyCheckoutProduct {
   unit: string | null;
   receivedAt: string | null;
   stageName: string | null;
+  /** Where the product is shelved — filled for pending pickups. */
+  location?: string | null;
 }
 
 /**

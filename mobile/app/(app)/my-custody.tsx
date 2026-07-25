@@ -20,6 +20,7 @@ interface MyStockItem {
   material: { code: string; name: string; unit: string | null } | null;
   lot: { lotNumber: string } | null;
   warehouse: { code: string } | null;
+  rack?: { code: string } | null;
   orderNumber: string | null;
   stageName: string | null;
 }
@@ -29,6 +30,8 @@ interface MyTool {
   receivedAt: string | null;
   tool: { id: string; code: string; name: string } | null;
   stageName: string | null;
+  /** Where the tool sits (warehouse / zone / rack) — pending pickups. */
+  location?: string | null;
   reservedFrom?: string | null;
   reservedTo?: string | null;
 }
@@ -40,6 +43,8 @@ interface MyProduct {
   unit: string | null;
   receivedAt: string | null;
   stageName: string | null;
+  /** Where the product is shelved — pending pickups. */
+  location?: string | null;
 }
 interface HistoryRecord {
   id: string;
@@ -177,7 +182,9 @@ function BucketView({
               title={`${it.material?.code ?? "—"} · ${it.material?.name ?? ""}`}
               subtitle={[
                 it.lot?.lotNumber,
-                it.warehouse?.code,
+                it.warehouse?.code
+                  ? `Konum: ${[it.warehouse.code, it.rack?.code].filter(Boolean).join(" / ")}`
+                  : null,
                 it.stageName,
                 it.orderNumber,
               ]
@@ -199,6 +206,7 @@ function BucketView({
               title={`${t.tool?.code ?? "—"} · ${t.tool?.name ?? ""}`}
               subtitle={[
                 t.stageName ? `Aşama: ${t.stageName}` : null,
+                t.location ? `Konum: ${t.location}` : null,
                 t.receivedAt
                   ? fmt(t.receivedAt)
                   : t.reservedFrom
@@ -220,7 +228,14 @@ function BucketView({
             <Row
               key={p.id}
               title={`${p.code} · ${p.name}`}
-              subtitle={p.stageName ? `Girdi: ${p.stageName}` : undefined}
+              subtitle={
+                [
+                  p.stageName ? `Girdi: ${p.stageName}` : null,
+                  p.location ? `Konum: ${p.location}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ") || undefined
+              }
               right={`${p.quantity} ${p.unit ?? ""}`}
               badge={badge("pending-product")}
             />

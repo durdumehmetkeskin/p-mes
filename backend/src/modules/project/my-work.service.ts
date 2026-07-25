@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import { CustodyService } from '../custody/custody.service';
 import { CustodyRecord } from '../custody/entities/custody-record.entity';
 import { StockItem } from '../inventory/entities/stock-item.entity';
@@ -8,6 +8,8 @@ import { StockItemStatus } from '../inventory/enums/stock-item-status.enum';
 import { Product } from '../products/entities/product.entity';
 import type { User } from '../users/entities/user.entity';
 import { Process } from './entities/process.entity';
+import { ProcessStage } from './entities/process-stage.entity';
+import { ProcessStageLink } from './entities/process-stage-link.entity';
 import { StageToolReservation } from './entities/stage-tool-reservation.entity';
 import { ProcessStageStatus } from './enums/process-stage-status.enum';
 import { ProcessStatus } from './enums/process-status.enum';
@@ -21,6 +23,8 @@ export interface MyStockItemView {
   material: { code: string; name: string; unit: string | null } | null;
   lot: { lotNumber: string } | null;
   warehouse: { code: string } | null;
+  /** The rack the item sits on (pickup location). */
+  rack: { code: string } | null;
   orderNumber: string | null;
   stageName: string | null;
 }
@@ -31,6 +35,8 @@ export interface MyToolView {
   receivedAt: Date | null;
   tool: { id: string; code: string; name: string } | null;
   stageName: string | null;
+  /** Where the tool sits (warehouse / zone / rack) — pending pickups only. */
+  location: string | null;
 }
 
 export interface MyProductView {
@@ -42,6 +48,8 @@ export interface MyProductView {
   receivedAt: Date | null;
   /** The consuming stage the product was picked up for. */
   stageName: string | null;
+  /** Where the product is shelved (location / storage rack) — pending only. */
+  location: string | null;
 }
 
 export interface MyResponsibilityView {
@@ -164,6 +172,7 @@ export class MyWorkService {
         relations: {
           lot: { material: { materialUnit: true } },
           warehouse: true,
+          rack: true,
           order: true,
           stage: true,
         },
@@ -211,6 +220,7 @@ export class MyWorkService {
           : null,
         lot: it.lot ? { lotNumber: it.lot.lotNumber } : null,
         warehouse: it.warehouse ? { code: it.warehouse.code } : null,
+        rack: it.rack ? { code: it.rack.code } : null,
         orderNumber: it.order?.orderNumber ?? null,
         stageName: it.stage?.name ?? null,
       })),
@@ -222,6 +232,7 @@ export class MyWorkService {
           ? { id: r.tool.id, code: r.tool.code, name: r.tool.name }
           : null,
         stageName: r.stage?.name ?? null,
+        location: null,
       })),
       products: inputProducts.map((p) => ({
         id: p.id,
@@ -231,6 +242,7 @@ export class MyWorkService {
         unit: p.materialUnit?.name ?? null,
         receivedAt: p.inputReceivedAt,
         stageName: p.consumedByStage?.name ?? null,
+        location: null,
       })),
     };
   }
@@ -273,6 +285,7 @@ export class MyWorkService {
           relations: {
             lot: { material: { materialUnit: true } },
             warehouse: true,
+            rack: true,
             order: true,
             stage: true,
           },
@@ -287,13 +300,20 @@ export class MyWorkService {
             ]),
             stage: { workers: { id: user.id } },
           },
-          relations: { tool: true, stage: true },
+          // The tool's shelf (rack → zone → warehouse) = pickup location.
+          relations: {
+            tool: { rack: { zone: { warehouse: true } } },
+            stage: true,
+          },
           loadEagerRelations: false,
           order: { createdAt: 'DESC' },
         }),
         this.products
           .createQueryBuilder('p')
           .leftJoinAndSelect('p.materialUnit', 'mu')
+          .leftJoinAndSelect('p.storageRack', 'sr')
+          .leftJoinAndSelect('sr.storage', 'st')
+          .leftJoinAndSelect('st.location', 'loc')
           .innerJoinAndSelect('p.consumedByStage', 'cs')
           .innerJoin('cs.workers', 'w', 'w.id = :uid', { uid: user.id })
           .where('p.input_received_at IS NULL')
@@ -303,6 +323,57 @@ export class MyWorkService {
           .orderBy('p.createdAt', 'DESC')
           .getMany(),
       ]);
+
+    // io-inherited pending inputs: products PRODUCED by io-predecessor stages
+    // of the user's (not-completed) worker stages, not yet formally consumed
+    // anywhere and not yet picked up — they gate the stage start too.
+    const stageRepo = this.processes.manager.getRepository(ProcessStage);
+    const myStages = await stageRepo
+      .createQueryBuilder('s')
+      .innerJoin('s.workers', 'w', 'w.id = :uid', { uid: user.id })
+      .where('s.status != :done', { done: ProcessStageStatus.Completed })
+      .getMany();
+    const ioLinks = myStages.length
+      ? await this.processes.manager.getRepository(ProcessStageLink).find({
+          where: { toStageId: In(myStages.map((s) => s.id)), kind: 'io' },
+        })
+      : [];
+    const predToConsumer = new Map(
+      ioLinks.map((l) => [
+        l.fromStageId,
+        myStages.find((s) => s.id === l.toStageId) ?? null,
+      ]),
+    );
+    const inheritedPending = ioLinks.length
+      ? await this.products.find({
+          where: {
+            stageId: In([...predToConsumer.keys()]),
+            inputReceivedAt: IsNull(),
+            consumedByStageId: IsNull(),
+          },
+          relations: {
+            materialUnit: true,
+            storageRack: { storage: { location: true } },
+          },
+          loadEagerRelations: false,
+          order: { createdAt: 'DESC' },
+        })
+      : [];
+
+    const productLocation = (p: {
+      storageRack?: {
+        code?: string;
+        storage?: { code?: string; location?: { name?: string } | null } | null;
+      } | null;
+    }): string | null => {
+      const sr = p.storageRack;
+      if (!sr) return null;
+      return (
+        [sr.storage?.location?.name ?? sr.storage?.code, sr.code]
+          .filter(Boolean)
+          .join(' / ') || null
+      );
+    };
 
     return {
       pending: {
@@ -320,6 +391,7 @@ export class MyWorkService {
             : null,
           lot: it.lot ? { lotNumber: it.lot.lotNumber } : null,
           warehouse: it.warehouse ? { code: it.warehouse.code } : null,
+          rack: it.rack ? { code: it.rack.code } : null,
           orderNumber: it.order?.orderNumber ?? null,
           stageName: it.stage?.name ?? null,
         })),
@@ -331,18 +403,39 @@ export class MyWorkService {
             ? { id: r.tool.id, code: r.tool.code, name: r.tool.name }
             : null,
           stageName: r.stage?.name ?? null,
+          location:
+            [
+              r.tool?.rack?.zone?.warehouse?.code,
+              r.tool?.rack?.zone?.code,
+              r.tool?.rack?.code,
+            ]
+              .filter(Boolean)
+              .join(' / ') || null,
           reservedFrom: r.reservedFrom,
           reservedTo: r.reservedTo,
         })),
-        products: pendingProducts.map((p) => ({
-          id: p.id,
-          code: p.code,
-          name: p.name,
-          quantity: p.quantity,
-          unit: p.materialUnit?.name ?? null,
-          receivedAt: null,
-          stageName: p.consumedByStage?.name ?? null,
-        })),
+        products: [
+          ...pendingProducts.map((p) => ({
+            id: p.id,
+            code: p.code,
+            name: p.name,
+            quantity: p.quantity,
+            unit: p.materialUnit?.name ?? null,
+            receivedAt: null,
+            stageName: p.consumedByStage?.name ?? null,
+            location: productLocation(p),
+          })),
+          ...inheritedPending.map((p) => ({
+            id: p.id,
+            code: p.code,
+            name: p.name,
+            quantity: p.quantity,
+            unit: p.materialUnit?.name ?? null,
+            receivedAt: null,
+            stageName: predToConsumer.get(p.stageId ?? '')?.name ?? null,
+            location: productLocation(p),
+          })),
+        ],
       },
       held,
       history,
