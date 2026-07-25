@@ -5,7 +5,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, In, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, IsNull, Repository } from 'typeorm';
+import { Product } from '../products/entities/product.entity';
 import { StockItem } from '../inventory/entities/stock-item.entity';
 import { StockItemsService } from '../inventory/stock-items.service';
 import { InventoryTransaction } from '../inventory/entities/inventory-transaction.entity';
@@ -1019,6 +1020,17 @@ export class ProcessStagesService {
       // Cannot start until every tool reserved for this stage has been received
       // (handed over to the stage responsible via the QR handover).
       await this.toolReservationsService.assertAllReceived(id);
+
+      // Cannot start until every INPUT PRODUCT assigned to this stage has been
+      // picked up by a stage worker (POST /products/:id/receive-input).
+      const unreceivedInputs = await this.stages.manager
+        .getRepository(Product)
+        .count({ where: { consumedByStageId: id, inputReceivedAt: IsNull() } });
+      if (unreceivedInputs > 0) {
+        throw new BadRequestException(
+          'Bu aşama başlatılamaz: girdi ürün(ler)i henüz teslim alınmadı',
+        );
+      }
     }
 
     // Cannot complete until every held tool's return has been STARTED

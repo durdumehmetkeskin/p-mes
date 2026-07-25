@@ -16,6 +16,7 @@ import { StatusBadge } from "@/components/refine-ui/status-badge";
 import { AttachmentsPanel } from "@/components/attachments/attachments-panel";
 import { CompletionReportCard } from "@/components/project/completion-report-card";
 import { StageDirectives } from "@/components/project/stage-directives";
+import { StageInputs } from "@/components/project/stage-inputs";
 import { StageReservation } from "@/components/project/stage-reservation";
 import { StageStockItems } from "@/components/project/stage-stock-items";
 import { StageTools } from "@/components/project/stage-tools";
@@ -32,7 +33,7 @@ interface Stage extends BaseRecord {
   name?: string;
   status?: string;
   sequence?: number;
-  incomingLinks?: Array<{ fromStageId: string }>;
+  incomingLinks?: Array<{ fromStageId: string; kind?: "sequence" | "io" }>;
   note?: string;
   directives?: string | null;
   durationHours?: number;
@@ -73,6 +74,16 @@ export default function StageDetailScreen() {
   // responsible may EDIT a locked (pending) stage's info regardless.
   const myIndex = stages.findIndex((s) => s.id === stageId);
   const unlocked = stageUnlocked(stages, myIndex);
+
+  // Stages whose OUT port feeds this stage's IN port — their output products
+  // and documents flow in as this stage's inputs (web parity).
+  const ioPredecessors = (stage?.incomingLinks ?? [])
+    .filter((l) => l.kind === "io")
+    .map((l) => ({
+      id: l.fromStageId,
+      name:
+        stages.find((s) => s.id === l.fromStageId)?.name ?? "connected stage",
+    }));
 
   const { has } = usePermissions();
   const isAdmin = useIsAdmin();
@@ -315,6 +326,16 @@ export default function StageDetailScreen() {
               editable={canStatusAll || canStatusWorker}
             />
           ) : null}
+
+          {/* Inputs: input products (worker pickup gates the start) + input
+              documents, including ones flowing in from connected stages. */}
+          <StageInputs
+            stageId={stageId as string}
+            orderId={process?.orderItem?.orderId}
+            ioPredecessors={ioPredecessors}
+            canEdit={canStatusAll}
+            canReceive={canStatusAll || canStatusWorker}
+          />
 
           <StageStockItems
             stageId={stageId as string}
