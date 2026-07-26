@@ -117,12 +117,15 @@ export class ProductsService {
       product.stage = stage;
       product.process = stage.process;
       product.order = order;
+      // Snapshot the true origin — flow-through re-stamps `stage` later.
+      product.originStageName = stage.name;
       return;
     }
 
     if (dto.stageId === null) {
       product.stage = null;
       product.process = null;
+      product.originStageName = null;
     }
 
     if (dto.orderId) {
@@ -141,10 +144,12 @@ export class ProductsService {
       // An explicit order replaces any previous stage-derived origin.
       product.stage = null;
       product.process = null;
+      product.originStageName = null;
     } else if (dto.orderId === null) {
       product.order = null;
       product.stage = null;
       product.process = null;
+      product.originStageName = null;
     }
   }
 
@@ -423,6 +428,7 @@ export class ProductsService {
     await this.productsRepository.save(product);
 
     // Custody ledger: picking the input up opens the worker's zimmet record.
+    // warehouseCode carries WHERE the pickup happened (the product's shelf).
     await this.custody.open({
       itemType: CustodyItemType.Product,
       sourceId: product.id,
@@ -433,9 +439,96 @@ export class ProductsService {
       quantity: product.quantity,
       unit: product.materialUnit?.name,
       stageName: stage?.name,
+      warehouseCode: ProductsService.shelfLocation(product),
       receivedAt: product.inputReceivedAt,
     });
     return this.findOne(id, user);
+  }
+
+  /** "location / storage rack" display string for where the product sits. */
+  private static shelfLocation(product: Product): string | null {
+    const sr = product.storageRack;
+    if (!sr) return null;
+    return (
+      [sr.storage?.location?.name ?? sr.storage?.code, sr.code]
+        .filter(Boolean)
+        .join(' / ') || null
+    );
+  }
+
+  /**
+   * The product's processing journey: produced → stored → (received at a
+   * stage → processed/released)… — one ordered event list combining the
+   * product's own fields with its custody-ledger rows (which survive
+   * flow-through re-stamps and stage deletion). Membership-scoped via findOne.
+   */
+  async getJourney(
+    id: string,
+    user?: User,
+  ): Promise<
+    Array<{
+      type: 'produced' | 'stored' | 'received' | 'processed' | 'released';
+      at: Date;
+      stageName: string | null;
+      user: string | null;
+      location: string | null;
+    }>
+  > {
+    const product = await this.findOne(id, user);
+    const events: Array<{
+      type: 'produced' | 'stored' | 'received' | 'processed' | 'released';
+      at: Date;
+      stageName: string | null;
+      user: string | null;
+      location: string | null;
+    }> = [];
+
+    events.push({
+      type: 'produced',
+      at: product.producedAt ?? product.createdAt,
+      stageName: product.originStageName ?? product.stage?.name ?? null,
+      user: product.producedByUser?.name ?? null,
+      location: null,
+    });
+
+    if (product.receivedAt) {
+      events.push({
+        type: 'stored',
+        at: product.receivedAt,
+        stageName: null,
+        user: product.receivedByUser?.name ?? null,
+        location: ProductsService.shelfLocation(product),
+      });
+    }
+
+    const rows = await this.custody.listForSource(
+      CustodyItemType.Product,
+      product.id,
+    );
+    for (const r of rows) {
+      events.push({
+        type: 'received',
+        at: r.receivedAt,
+        stageName: r.stageName,
+        user: r.user?.name ?? null,
+        location: r.warehouseCode,
+      });
+      if (r.closedAt) {
+        events.push({
+          type:
+            r.closeAction === CustodyCloseAction.Consumed
+              ? 'processed'
+              : 'released',
+          at: r.closedAt,
+          stageName: r.stageName,
+          user: r.user?.name ?? null,
+          location: null,
+        });
+      }
+    }
+
+    events.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+    return events;
   }
 
   // --- one-sided handover (store) + QR ---

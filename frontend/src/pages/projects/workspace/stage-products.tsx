@@ -221,7 +221,6 @@ export function StageInputProductsPanel({
   predecessorStageIds = [],
   ioPredecessorStageIds = [],
   canEdit = false,
-  canReceive = false,
 }: {
   stageId: string;
   orderId?: string;
@@ -233,8 +232,6 @@ export function StageInputProductsPanel({
   /** Inputs are planned by the process responsible or an admin (backend
    *  mirrors with a 403); everyone else sees them read-only. */
   canEdit?: boolean;
-  /** Stage workers (+ responsible/admin) — may pick the input up (custody). */
-  canReceive?: boolean;
 }) {
   const apiUrl = useApiUrl();
   const { has } = usePermissions();
@@ -333,16 +330,8 @@ export function StageInputProductsPanel({
       { onSuccess: refresh },
     );
 
-  // A worker of THIS stage takes custody of the input product.
-  const receiveInput = (productId: string) =>
-    customMutate(
-      {
-        url: `${apiUrl}/products/${productId}/receive-input`,
-        method: "post",
-        values: {},
-      },
-      { onSuccess: refresh },
-    );
+  // Pickup is QR-ONLY: a worker scans the product's QR (mobile) to take
+  // custody — no direct receive from this panel.
 
   if (!has("products:read")) return null;
 
@@ -422,17 +411,11 @@ export function StageInputProductsPanel({
                   <span className="text-xs text-muted-foreground">
                     Teslim alındı
                   </span>
-                ) : canReceive ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-6 px-2 text-xs"
-                    title="Girdi ürünü teslim al (zimmetine geçer)"
-                    onClick={() => receiveInput(p.id)}
-                  >
-                    Teslim al
-                  </Button>
-                ) : null}
+                ) : (
+                  <span className="text-xs text-amber-500">
+                    QR okutarak teslim alınır
+                  </span>
+                )}
               </span>
             </li>
           ))}
@@ -475,17 +458,11 @@ export function StageInputProductsPanel({
                       ? `: ${p.inputReceivedByUser.name}`
                       : ""}
                   </span>
-                ) : canReceive ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-6 px-2 text-xs"
-                    title="Girdi ürünü teslim al (zimmetine geçer)"
-                    onClick={() => receiveInput(p.id)}
-                  >
-                    Teslim al
-                  </Button>
-                ) : null}
+                ) : (
+                  <span className="text-xs text-amber-500">
+                    QR okutarak teslim alınır
+                  </span>
+                )}
                 {canEdit && has("products:consume") && (
                   <Button
                     size="icon"

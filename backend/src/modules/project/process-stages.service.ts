@@ -10,6 +10,7 @@ import { CustodyService } from '../custody/custody.service';
 import { CustodyCloseAction } from '../custody/enums/custody-close-action.enum';
 import { CustodyItemType } from '../custody/enums/custody-item-type.enum';
 import { Product } from '../products/entities/product.entity';
+import { ProductHandoverStatus } from '../products/enums/product-handover-status.enum';
 import { StockItem } from '../inventory/entities/stock-item.entity';
 import { StockItemsService } from '../inventory/stock-items.service';
 import { InventoryTransaction } from '../inventory/entities/inventory-transaction.entity';
@@ -1116,16 +1117,42 @@ export class ProcessStagesService {
     }
     const saved = await this.stages.save(stage);
 
-    // Custody ledger: completing the stage uses up its input products (the
-    // holders' records close as consumed). Only products — returning stock
-    // stays open until the warehouse weighs it in.
+    // Custody ledger + FLOW-THROUGH: completing the stage uses up its input
+    // products (holders' records close as consumed) and each such product
+    // becomes THIS stage's output — freed to progress to the next stage via
+    // the io links (the start gates / pending lists / inherited panels all
+    // match on product.stageId, so no other code changes are needed). Only
+    // products — returning stock stays open until the warehouse weighs it in.
     if (status === ProcessStageStatus.Completed) {
-      await this.custody.closeAllForStage(
-        id,
-        CustodyCloseAction.Consumed,
-        undefined,
-        [CustodyItemType.Product],
-      );
+      await this.stages.manager.transaction(async (m) => {
+        await this.custody.closeAllForStage(id, CustodyCloseAction.Consumed, m, [
+          CustodyItemType.Product,
+        ]);
+        const productRepo = m.getRepository(Product);
+        const consumed = await productRepo.find({
+          where: { consumedByStageId: id },
+        });
+        for (const p of consumed) {
+          p.stage = { id } as ProcessStage;
+          p.stageId = id;
+          p.consumedByStage = null;
+          p.consumedByStageId = null;
+          p.inputReceivedByUser = null;
+          p.inputReceivedByUserId = null;
+          p.inputReceivedAt = null;
+          // Reset the storage-handover cycle so the product can be re-shelved
+          // on its way to the next stage (store() rejects `received` rows).
+          p.handoverStatus = ProductHandoverStatus.Produced;
+          p.deliveredByUser = null;
+          p.deliveredByUserId = null;
+          p.deliveredAt = null;
+          p.receivedByUser = null;
+          p.receivedByUserId = null;
+          p.receivedAt = null;
+          // Entity save (not .update) so the audit subscriber records it.
+          await productRepo.save(p);
+        }
+      });
     }
 
     await this.recomputeOverall(stage.processId);

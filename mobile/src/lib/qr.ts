@@ -51,9 +51,10 @@ export async function routeToQrEntity(
     return true;
   }
   if (type === "product") {
-    // Handover: storage drop-off + input pickup. `scanned=1` proves physical
-    // presence — it unlocks the direct input-receive (custody) action.
-    router.replace(`/products/${id}/handover?scanned=1`);
+    // PRODUCT CARD: identity + processing journey + handover actions.
+    // `scanned=1` proves physical presence — it unlocks the direct
+    // input-receive (custody) action.
+    router.replace(`/products/${id}?scanned=1`);
     return true;
   }
   if (type === "order-item") {

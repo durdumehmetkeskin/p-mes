@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { type BaseRecord, useInvalidate, useList } from "@refinedev/core";
+import { useRouter } from "expo-router";
 import { Download, Link2, Plus, X } from "lucide-react-native";
 import { toast } from "sonner-native";
 
@@ -66,6 +67,7 @@ export function StageInputs({
 }) {
   const { has } = usePermissions();
   const invalidate = useInvalidate();
+  const router = useRouter();
   const [busyId, setBusyId] = useState<string | null>(null);
 
   // Direct inputs: products consumed by this stage.
@@ -162,14 +164,9 @@ export function StageInputs({
     );
   };
 
-  // A worker of THIS stage takes custody of the input product.
-  const receiveInput = (productId: string) => {
-    setBusyId(productId);
-    void run(
-      () => axiosInstance.post(`/products/${productId}/receive-input`),
-      "Could not receive input",
-    );
-  };
+  // Pickup is QR-ONLY: scanning the product's QR proves physical presence and
+  // opens the product handover screen with the receive action unlocked
+  // (mirrors the stock-item rule) — no direct receive from this panel.
 
   // Inherited input documents: the io predecessors' OUTPUT documents flow in
   // as this stage's inputs (read-only; the source stage owns them).
@@ -280,20 +277,22 @@ export function StageInputs({
                   ? `: ${p.inputReceivedByUser.name}`
                   : ""}
               </Text>
-            ) : canReceive ? (
-              <Pressable
-                onPress={() => receiveInput(p.id)}
-                disabled={busyId === p.id}
-                className="mt-1 items-center rounded-md border border-primary bg-primary px-3 py-2 active:opacity-80"
-              >
-                <Text className="text-xs text-primary-foreground">
-                  Teslim al (zimmetine geçer)
-                </Text>
-              </Pressable>
             ) : (
-              <Text className="text-xs text-warning">
-                Henüz teslim alınmadı — aşama başlatılamaz.
-              </Text>
+              <>
+                <Text className="text-xs text-warning">
+                  Henüz teslim alınmadı — aşama başlatılamaz.
+                </Text>
+                {canReceive ? (
+                  <Pressable
+                    onPress={() => router.push("/scan")}
+                    className="mt-1 items-center rounded-md border border-primary bg-primary px-3 py-2 active:opacity-80"
+                  >
+                    <Text className="text-xs text-primary-foreground">
+                      Teslim al — QR okut
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </>
             )}
           </View>
         ))}
@@ -335,20 +334,22 @@ export function StageInputs({
                     ? `: ${p.inputReceivedByUser.name}`
                     : ""}
                 </Text>
-              ) : canReceive ? (
-                <Pressable
-                  onPress={() => receiveInput(p.id)}
-                  disabled={busyId === p.id}
-                  className="mt-1 items-center rounded-md border border-primary bg-primary px-3 py-2 active:opacity-80"
-                >
-                  <Text className="text-xs text-primary-foreground">
-                    Teslim al (zimmetine geçer)
-                  </Text>
-                </Pressable>
               ) : (
-                <Text className="text-xs text-warning">
-                  Henüz teslim alınmadı — aşama başlatılamaz.
-                </Text>
+                <>
+                  <Text className="text-xs text-warning">
+                    Henüz teslim alınmadı — aşama başlatılamaz.
+                  </Text>
+                  {canReceive ? (
+                    <Pressable
+                      onPress={() => router.push("/scan")}
+                      className="mt-1 items-center rounded-md border border-primary bg-primary px-3 py-2 active:opacity-80"
+                    >
+                      <Text className="text-xs text-primary-foreground">
+                        Teslim al — QR okut
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </>
               )}
             </View>
           ))

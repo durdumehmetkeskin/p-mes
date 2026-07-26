@@ -157,6 +157,25 @@ export class CustodyService {
       .getMany();
   }
 
+  /**
+   * Every record of ONE item (open + closed), oldest first — the item's
+   * journey. QB join keeps the actor's name even for soft-deleted users.
+   */
+  listForSource(
+    itemType: CustodyItemType,
+    sourceId: string,
+  ): Promise<CustodyRecord[]> {
+    return this.repo
+      .createQueryBuilder('c')
+      .leftJoinAndSelect('c.user', 'u')
+      .where('c.item_type = :itemType AND c.source_id = :sourceId', {
+        itemType,
+        sourceId,
+      })
+      .orderBy('c.received_at', 'ASC')
+      .getMany();
+  }
+
   /** The user's OPEN records (currently held), newest first. */
   listOpen(userId: string): Promise<CustodyRecord[]> {
     return this.repo.find({

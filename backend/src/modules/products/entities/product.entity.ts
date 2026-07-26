@@ -84,6 +84,10 @@ export class Product extends BaseEntity {
   @Column({ type: 'uuid', name: 'process_id', nullable: true })
   processId: string | null;
 
+  // The stage the product is CURRENTLY the output of. Starts as the producing
+  // stage; each consuming stage's completion re-stamps it (flow-through: the
+  // product progresses through stages). The ORIGINAL producer survives in
+  // `originStageName` below.
   @ManyToOne(() => ProcessStage, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'stage_id' })
   stage: ProcessStage | null;
@@ -91,6 +95,16 @@ export class Product extends BaseEntity {
   @Index()
   @Column({ type: 'uuid', name: 'stage_id', nullable: true })
   stageId: string | null;
+
+  // Snapshot of the ORIGINAL producing stage's name — set at creation, kept
+  // through flow-through re-stamps so the journey's "produced" event stays true.
+  @Column({
+    type: 'varchar',
+    length: 255,
+    name: 'origin_stage_name',
+    nullable: true,
+  })
+  originStageName: string | null;
 
   // Stage that USED this product as an input (stage/stageId above is the stage
   // that PRODUCED it). A product is consumed by at most one stage; stages take

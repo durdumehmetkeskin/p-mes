@@ -350,7 +350,6 @@ export function StageDetailDialog({
             )}
             ioPredecessorStageIds={ioPredecessors.map((p) => p.id)}
             canEdit={canEditInputs}
-            canReceive={canActOnStage}
           />
           <InheritedInputDocs stages={ioPredecessors} />
           <AttachmentsPanel

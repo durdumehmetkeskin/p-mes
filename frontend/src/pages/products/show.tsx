@@ -1,5 +1,13 @@
 import { useList, useNotification, useShow } from "@refinedev/core";
-import { useState } from "react";
+import {
+  Boxes,
+  CheckCircle2,
+  Factory,
+  Undo2,
+  UserCheck,
+  type LucideIcon,
+} from "lucide-react";
+import { useEffect, useState } from "react";
 
 import { QrCodeDialog } from "@/components/qr/qr-code-dialog";
 import { StatusBadge } from "@/components/refine-ui/status-badge";
@@ -36,6 +44,7 @@ interface ProductRecord {
   order: { id: string; orderNumber: string; name?: string } | null;
   process: { id: string } | null;
   stage: { id: string; name: string } | null;
+  originStageName: string | null;
   consumedByStage: { id: string; name: string } | null;
   storageRack: {
     id: string;
@@ -54,6 +63,25 @@ interface ProductRecord {
   receivedAt: string | null;
   createdAt: string;
 }
+
+interface JourneyEvent {
+  type: "produced" | "stored" | "received" | "processed" | "released";
+  at: string;
+  stageName: string | null;
+  user: string | null;
+  location: string | null;
+}
+
+const EVENT_META: Record<
+  JourneyEvent["type"],
+  { label: string; icon: LucideIcon; cls: string }
+> = {
+  produced: { label: "Üretildi", icon: Factory, cls: "text-sky-400" },
+  stored: { label: "Depoya bırakıldı", icon: Boxes, cls: "text-muted-foreground" },
+  received: { label: "Teslim alındı", icon: UserCheck, cls: "text-sky-400" },
+  processed: { label: "İşlendi", icon: CheckCircle2, cls: "text-emerald-500" },
+  released: { label: "Serbest bırakıldı", icon: Undo2, cls: "text-muted-foreground" },
+};
 
 function Field({
   label,
@@ -79,6 +107,20 @@ export const ProductsShow = () => {
   const [storeOpen, setStoreOpen] = useState(false);
   const [locId, setLocId] = useState("");
   const [rackId, setRackId] = useState("");
+
+  // Processing journey — which stage, by whom, where, when (per event).
+  const [journey, setJourney] = useState<JourneyEvent[] | null>(null);
+  useEffect(() => {
+    if (!record?.id) return;
+    let mounted = true;
+    axiosInstance
+      .get<JourneyEvent[]>(`/products/${record.id}/journey`)
+      .then((r) => mounted && setJourney(Array.isArray(r.data) ? r.data : []))
+      .catch(() => mounted && setJourney([]));
+    return () => {
+      mounted = false;
+    };
+  }, [record?.id]);
 
   const { result: locations } = useList<{ id: string; code: string; name: string }>({
     resource: "locations",
@@ -164,9 +206,10 @@ export const ProductsShow = () => {
                 {record.quantity} {record.materialUnit?.name ?? ""}
               </Field>
               <Field label="Order">{record.order?.orderNumber ?? "—"}</Field>
-              <Field label="Produced by stage">
-                {record.stage?.name ?? "—"}
+              <Field label="Üretildiği aşama">
+                {record.originStageName ?? record.stage?.name ?? "—"}
               </Field>
+              <Field label="Şu anki aşama">{record.stage?.name ?? "—"}</Field>
               <Field label="Used as input at">
                 {record.consumedByStage?.name ?? "—"}
               </Field>
@@ -198,6 +241,50 @@ export const ProductsShow = () => {
                   : "—"}
               </Field>
               <Field label="Note">{record.note ?? "—"}</Field>
+
+              {/* İşlem geçmişi — the product's journey through the stages. */}
+              <div className="mt-4">
+                <div className="mb-1 text-sm font-semibold">İşlem Geçmişi</div>
+                {journey === null ? (
+                  <Skeleton className="h-16 w-full" />
+                ) : journey.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Henüz kayıtlı işlem yok.
+                  </p>
+                ) : (
+                  <ul className="divide-y text-sm">
+                    {journey.map((e, i) => {
+                      const meta = EVENT_META[e.type];
+                      const Icon = meta.icon;
+                      return (
+                        <li
+                          key={`${e.type}-${e.at}-${i}`}
+                          className="flex items-center gap-3 py-2"
+                        >
+                          <Icon className={`size-4 shrink-0 ${meta.cls}`} />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate font-medium">
+                              {meta.label}
+                              {e.stageName ? ` — ${e.stageName}` : ""}
+                            </span>
+                            <span className="block truncate text-xs text-muted-foreground">
+                              {[
+                                e.user ? `Kişi: ${e.user}` : null,
+                                e.location ? `Konum: ${e.location}` : null,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ") || "—"}
+                            </span>
+                          </span>
+                          <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                            {new Date(e.at).toLocaleString()}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
             </>
           )}
         </CardContent>

@@ -86,6 +86,19 @@ export class ProductsController {
     return this.productsService.findOne(id, user);
   }
 
+  @RequirePermissions('products:read')
+  @Get(':id/journey')
+  @ApiOperation({
+    summary:
+      "The product's processing journey (produced/stored/received/processed per stage, with actor + location + time)",
+  })
+  getJourney(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+  ): ReturnType<ProductsService['getJourney']> {
+    return this.productsService.getJourney(id, user);
+  }
+
   @RequirePermissions('products:create')
   @Post()
   @ApiOperation({ summary: 'Record a produced product' })
