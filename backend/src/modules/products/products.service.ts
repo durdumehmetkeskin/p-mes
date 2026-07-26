@@ -13,6 +13,11 @@ import { CustodyService } from '../custody/custody.service';
 import { CustodyCloseAction } from '../custody/enums/custody-close-action.enum';
 import { CustodyItemType } from '../custody/enums/custody-item-type.enum';
 import { MaterialUnitsService } from '../inventory/material-units.service';
+import { SectionReservation } from '../location/entities/section-reservation.entity';
+import {
+  LocationDataService,
+  type ReadingSummary,
+} from '../location/location-data.service';
 import { StorageRacksService } from '../location/storage-racks.service';
 import {
   NotificationsService,
@@ -43,6 +48,7 @@ export class ProductsService {
     private readonly productTypesService: ProductTypesService,
     private readonly materialUnitsService: MaterialUnitsService,
     private readonly storageRacksService: StorageRacksService,
+    private readonly locationData: LocationDataService,
     private readonly projects: ProjectsService,
     private readonly notifications: NotificationsService,
     private readonly qrService: QrService,
@@ -472,6 +478,10 @@ export class ProductsService {
       stageName: string | null;
       user: string | null;
       location: string | null;
+      /** "Location · Section" the stage ran in (from its section reservation). */
+      section?: string | null;
+      /** Temp/humidity over the operation's window (section's location sensors). */
+      environment?: ({ from: Date; to: Date } & ReadingSummary) | null;
     }>
   > {
     const product = await this.findOne(id, user);
@@ -481,6 +491,8 @@ export class ProductsService {
       stageName: string | null;
       user: string | null;
       location: string | null;
+      section?: string | null;
+      environment?: ({ from: Date; to: Date } & ReadingSummary) | null;
     }> = [];
 
     events.push({
@@ -505,13 +517,72 @@ export class ProductsService {
       CustodyItemType.Product,
       product.id,
     );
+
+    // Where each stage RAN + the temp/humidity while it did: the stage's
+    // section reservation gives the location/section; the location's sensor
+    // readings are summarised over the custody window (receive → close).
+    const stageIds = [
+      ...new Set(rows.map((r) => r.stageId).filter((s): s is string => !!s)),
+    ];
+    const reservations = stageIds.length
+      ? await this.stages.manager.getRepository(SectionReservation).find({
+          where: { stageId: In(stageIds) },
+          relations: { section: { location: true } },
+          loadEagerRelations: false,
+        })
+      : [];
+
     for (const r of rows) {
+      const from = r.receivedAt;
+      const to = r.closedAt ?? new Date();
+      const mine = reservations.filter((sr) => sr.stageId === r.stageId);
+      // Prefer a reservation overlapping the operation window, else any of
+      // the stage's reservations (times are floating wall-clock; heuristic).
+      const overlap = mine.find((sr) => {
+        const rs = sr.startAt
+          ? new Date(sr.startAt).getTime()
+          : sr.startDate
+            ? Date.parse(`${sr.startDate}T00:00:00.000Z`)
+            : Number.NEGATIVE_INFINITY;
+        const re = sr.endAt
+          ? new Date(sr.endAt).getTime()
+          : sr.endDate
+            ? Date.parse(`${sr.endDate}T00:00:00.000Z`) + 86_400_000
+            : Number.POSITIVE_INFINITY;
+        return rs < new Date(to).getTime() && re > new Date(from).getTime();
+      });
+      const resv = overlap ?? mine[0];
+      const section = resv?.section ?? null;
+      let sectionLabel: string | null = null;
+      let environment:
+        | ({ from: Date; to: Date } & ReadingSummary)
+        | null = null;
+      if (section) {
+        sectionLabel =
+          [
+            section.location?.name ?? section.location?.code,
+            section.name ?? section.code,
+          ]
+            .filter(Boolean)
+            .join(' · ') || null;
+        if (section.locationId) {
+          const series = await this.locationData.getSeries(section.locationId, {
+            from: new Date(from).toISOString(),
+            to: new Date(to).toISOString(),
+            maxPoints: 24,
+          });
+          environment = { from, to, ...series.summary };
+        }
+      }
+
       events.push({
         type: 'received',
         at: r.receivedAt,
         stageName: r.stageName,
         user: r.user?.name ?? null,
         location: r.warehouseCode,
+        section: sectionLabel,
+        environment,
       });
       if (r.closedAt) {
         events.push({

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { ScrollView, Text, View } from "react-native";
-import { type BaseRecord, useList, useOne } from "@refinedev/core";
+import { Pressable, ScrollView, Text, View } from "react-native";
+import { type BaseRecord, useGetIdentity, useList, useOne } from "@refinedev/core";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   Boxes,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Factory,
   PackageCheck,
   Undo2,
@@ -24,6 +26,7 @@ import {
 } from "@/components/ui/searchable-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { showApiError } from "@/components/ui/error-alert";
+import { useIsAdmin } from "@/hooks/use-is-admin";
 import { axiosInstance } from "@/providers/axios";
 import { colors } from "@/lib/theme";
 
@@ -35,6 +38,8 @@ interface Product extends BaseRecord {
   handoverStatus?: "produced" | "delivering" | "received";
   materialUnit?: { name?: string } | null;
   stage?: { name?: string } | null;
+  stageId?: string | null;
+  processId?: string | null;
   originStageName?: string | null;
   order?: { orderNumber?: string } | null;
   storageRack?: {
@@ -45,13 +50,38 @@ interface Product extends BaseRecord {
   receivedByUser?: { name?: string } | null;
   consumedByStageId?: string | null;
   consumedByStage?: { name?: string } | null;
-  inputReceivedByUser?: { name?: string } | null;
+  inputReceivedByUser?: { id?: string; name?: string } | null;
   inputReceivedAt?: string | null;
+  process?: {
+    id: string;
+    orderItem?: { sequence?: number; name?: string } | null;
+  } | null;
 }
 interface StorageRackRow extends BaseRecord {
   id: string;
   code?: string;
   storage?: { location?: { code?: string; name?: string } | null } | null;
+}
+interface ProcessStages extends BaseRecord {
+  id: string;
+  stages?: Array<{
+    id: string;
+    name?: string;
+    status?: string;
+    workers?: Array<{ id: string }>;
+    incomingLinks?: Array<{ fromStageId: string; kind?: string }>;
+  }>;
+}
+interface JourneyEnvironment {
+  from: string;
+  to: string;
+  count: number;
+  tempMin: number | null;
+  tempMax: number | null;
+  tempAvg: number | null;
+  humidityMin: number | null;
+  humidityMax: number | null;
+  humidityAvg: number | null;
 }
 interface JourneyEvent {
   type: "produced" | "stored" | "received" | "processed" | "released";
@@ -59,6 +89,10 @@ interface JourneyEvent {
   stageName: string | null;
   user: string | null;
   location: string | null;
+  /** "Location · Section" the stage ran in (from its section reservation). */
+  section?: string | null;
+  /** Temp/humidity summary over the operation window. */
+  environment?: JourneyEnvironment | null;
 }
 
 const EVENT_META: Record<
@@ -96,6 +130,15 @@ export default function ProductCardScreen() {
   const viaScan = scanned === "1";
   const [busy, setBusy] = useState(false);
   const [rackId, setRackId] = useState<string | null>(null);
+  // Expanded journey rows (section + environment dropdown per stage step).
+  const [expandedIdx, setExpandedIdx] = useState<Set<number>>(new Set());
+  const toggleExpanded = (i: number) =>
+    setExpandedIdx((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
 
   const { result: product, query } = useOne<Product>({
     resource: "products",
@@ -121,7 +164,49 @@ export default function ProductCardScreen() {
   }, [loadJourney]);
 
   const status = product?.handoverStatus ?? "produced";
-  const canStore = status !== "received";
+  const { data: identity } = useGetIdentity<{ id: string }>();
+  const isAdmin = useIsAdmin();
+
+  // "Depoya bırak" is shown ONLY while the product is in MY custody (I picked
+  // it up as a stage input and it is still on me).
+  const inMyCustody = Boolean(
+    product?.inputReceivedAt &&
+      identity?.id &&
+      product?.inputReceivedByUser?.id === identity.id,
+  );
+  const canStore = inMyCustody && status !== "received";
+
+  // The stage the product is (or would be) the input of: its formal consumer,
+  // or — after flow-through — the not-completed io-successor of its current
+  // stage (receive-input auto-links onto it). The process fetch also carries
+  // each stage's workers for the "is this MY stage" check.
+  const { result: processRes } = useOne<ProcessStages>({
+    resource: "processes",
+    id: product?.processId ?? "",
+    errorNotification: false,
+    queryOptions: {
+      retry: false,
+      enabled: Boolean(product?.processId && !product?.inputReceivedAt),
+    },
+  });
+  const targetStage = product?.consumedByStageId
+    ? (processRes?.stages ?? []).find((s) => s.id === product.consumedByStageId)
+    : (processRes?.stages ?? []).find(
+        (s) =>
+          s.status !== "completed" &&
+          (s.incomingLinks ?? []).some(
+            (l) => l.kind === "io" && l.fromStageId === product?.stageId,
+          ),
+      );
+  // "Teslim al" is shown ONLY when the product is an input of a stage I work
+  // on (admin: any) — everyone else just sees the info + journey.
+  const canReceiveHere = Boolean(
+    !product?.inputReceivedAt &&
+      targetStage &&
+      (isAdmin ||
+        (identity?.id &&
+          (targetStage.workers ?? []).some((w) => w.id === identity.id))),
+  );
 
   const { result: racks } = useList<StorageRackRow>({
     resource: "storage-racks",
@@ -200,6 +285,21 @@ export default function ProductCardScreen() {
             <FieldRow label="Şu anki aşama" value={product.stage?.name} />
             <FieldRow label="Order" value={product.order?.orderNumber} />
             <FieldRow
+              label="Kalem"
+              value={
+                product.process?.orderItem
+                  ? [
+                      product.process.orderItem.sequence != null
+                        ? `#${product.process.orderItem.sequence}`
+                        : null,
+                      product.process.orderItem.name,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")
+                  : undefined
+              }
+            />
+            <FieldRow
               label="Stored at"
               value={
                 [
@@ -234,46 +334,94 @@ export default function ProductCardScreen() {
               <View className="mt-1">
                 {journey.map((e, i) => {
                   const meta = EVENT_META[e.type];
+                  const expandable = Boolean(e.section || e.environment);
+                  const isOpen = expandedIdx.has(i);
+                  const env = e.environment;
                   return (
                     <View
                       key={`${e.type}-${e.at}-${i}`}
-                      className={
-                        i > 0
-                          ? "flex-row items-center gap-2 border-t border-border py-2"
-                          : "flex-row items-center gap-2 py-2"
-                      }
+                      className={i > 0 ? "border-t border-border" : undefined}
                     >
-                      <Icon
-                        icon={meta.icon}
-                        size={16}
-                        color={
-                          meta.tone === "success"
-                            ? colors.success
-                            : meta.tone === "info"
-                              ? colors.info
-                              : colors.mutedForeground
-                        }
-                      />
-                      <View className="min-w-0 flex-1">
-                        <Text className="text-sm font-sans-medium text-foreground">
-                          {meta.label}
-                          {e.stageName ? ` — ${e.stageName}` : ""}
+                      <Pressable
+                        disabled={!expandable}
+                        onPress={() => toggleExpanded(i)}
+                        className="flex-row items-center gap-2 py-2"
+                      >
+                        <Icon
+                          icon={meta.icon}
+                          size={16}
+                          color={
+                            meta.tone === "success"
+                              ? colors.success
+                              : meta.tone === "info"
+                                ? colors.info
+                                : colors.mutedForeground
+                          }
+                        />
+                        <View className="min-w-0 flex-1">
+                          <Text className="text-sm font-sans-medium text-foreground">
+                            {meta.label}
+                            {e.stageName ? ` — ${e.stageName}` : ""}
+                          </Text>
+                          <Text
+                            className="text-xs text-muted-foreground"
+                            numberOfLines={2}
+                          >
+                            {[
+                              e.user ? `Kişi: ${e.user}` : null,
+                              e.location ? `Konum: ${e.location}` : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ") || "—"}
+                          </Text>
+                        </View>
+                        <Text className="font-mono text-[11px] text-muted-foreground">
+                          {fmtAt(e.at)}
                         </Text>
-                        <Text
-                          className="text-xs text-muted-foreground"
-                          numberOfLines={2}
-                        >
-                          {[
-                            e.user ? `Kişi: ${e.user}` : null,
-                            e.location ? `Konum: ${e.location}` : null,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ") || "—"}
-                        </Text>
-                      </View>
-                      <Text className="font-mono text-[11px] text-muted-foreground">
-                        {fmtAt(e.at)}
-                      </Text>
+                        {expandable ? (
+                          <Icon
+                            icon={isOpen ? ChevronUp : ChevronDown}
+                            size={14}
+                            color={colors.mutedForeground}
+                          />
+                        ) : null}
+                      </Pressable>
+                      {/* Dropdown: WHERE the stage ran (section) + the
+                          temp/humidity over the operation window. */}
+                      {expandable && isOpen ? (
+                        <View className="mb-2 gap-1 rounded-md border border-border bg-muted/30 p-2">
+                          {e.section ? (
+                            <Text className="text-xs text-foreground">
+                              Bölüm: {e.section}
+                            </Text>
+                          ) : null}
+                          {env ? (
+                            <>
+                              <Text className="text-xs text-muted-foreground">
+                                Aralık: {fmtAt(env.from)} → {fmtAt(env.to)}
+                              </Text>
+                              {env.count > 0 ? (
+                                <>
+                                  <Text className="text-xs text-foreground">
+                                    Sıcaklık: {env.tempMin ?? "—"}–
+                                    {env.tempMax ?? "—"} °C (ort{" "}
+                                    {env.tempAvg ?? "—"} °C)
+                                  </Text>
+                                  <Text className="text-xs text-foreground">
+                                    Nem: %{env.humidityMin ?? "—"}–%
+                                    {env.humidityMax ?? "—"} (ort %
+                                    {env.humidityAvg ?? "—"})
+                                  </Text>
+                                </>
+                              ) : (
+                                <Text className="text-xs text-muted-foreground">
+                                  Bu aralıkta sensör kaydı yok.
+                                </Text>
+                              )}
+                            </>
+                          ) : null}
+                        </View>
+                      ) : null}
                     </View>
                   );
                 })}
@@ -281,43 +429,32 @@ export default function ProductCardScreen() {
             )}
           </View>
 
-          {/* Input pickup: a worker of the CONSUMING stage takes custody —
-              unlocked by scanning the product QR (backend mirrors with 403). */}
-          {product.consumedByStageId ? (
-            product.inputReceivedAt ? (
-              <View className="rounded-lg border border-border bg-card p-4">
-                <FieldRow
-                  label="Teslim alan"
-                  value={product.inputReceivedByUser?.name ?? "—"}
+          {/* Input pickup — ONLY when the product is an input of a stage the
+              current user works on (admin: any); unlocked by the QR scan. */}
+          {canReceiveHere ? (
+            <View className="gap-2 rounded-lg border border-border bg-card p-4">
+              <Text className="text-xs text-muted-foreground">
+                Bu ürün "
+                {product.consumedByStage?.name ?? targetStage?.name ?? "aşama"}
+                " girdisi — teslim alın.
+              </Text>
+              {viaScan ? (
+                <Button
+                  label="Teslim al (zimmetine geçer)"
+                  disabled={busy}
+                  onPress={receiveInput}
                 />
-                <FieldRow
-                  label="Teslim tarihi"
-                  value={new Date(product.inputReceivedAt).toLocaleString()}
+              ) : (
+                <Button
+                  label="Teslim al — QR okut"
+                  disabled={busy}
+                  onPress={() => router.push("/scan")}
                 />
-              </View>
-            ) : (
-              <View className="gap-2 rounded-lg border border-border bg-card p-4">
-                <Text className="text-xs text-muted-foreground">
-                  Bu ürün "{product.consumedByStage?.name ?? "aşama"}" girdisi —
-                  aşama çalışanı teslim almalı.
-                </Text>
-                {viaScan ? (
-                  <Button
-                    label="Teslim al (zimmetine geçer)"
-                    disabled={busy}
-                    onPress={receiveInput}
-                  />
-                ) : (
-                  <Button
-                    label="Teslim al — QR okut"
-                    disabled={busy}
-                    onPress={() => router.push("/scan")}
-                  />
-                )}
-              </View>
-            )
+              )}
+            </View>
           ) : null}
 
+          {/* Storage drop-off — ONLY while the product is in MY custody. */}
           {canStore ? (
             <View className="gap-3 rounded-lg border border-border bg-card p-4">
               <Label>Depo rafı</Label>
@@ -334,11 +471,7 @@ export default function ProductCardScreen() {
                 onPress={store}
               />
             </View>
-          ) : (
-            <Text className="text-sm text-muted-foreground">
-              Bu ürün depoya bırakılmış — yapılacak işlem yok.
-            </Text>
-          )}
+          ) : null}
         </ScrollView>
       )}
     </Screen>

@@ -2,6 +2,8 @@ import { useList, useNotification, useShow } from "@refinedev/core";
 import {
   Boxes,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Factory,
   Undo2,
   UserCheck,
@@ -64,12 +66,27 @@ interface ProductRecord {
   createdAt: string;
 }
 
+interface JourneyEnvironment {
+  from: string;
+  to: string;
+  count: number;
+  tempMin: number | null;
+  tempMax: number | null;
+  tempAvg: number | null;
+  humidityMin: number | null;
+  humidityMax: number | null;
+  humidityAvg: number | null;
+}
 interface JourneyEvent {
   type: "produced" | "stored" | "received" | "processed" | "released";
   at: string;
   stageName: string | null;
   user: string | null;
   location: string | null;
+  /** "Location · Section" the stage ran in (from its section reservation). */
+  section?: string | null;
+  /** Temp/humidity summary over the operation window. */
+  environment?: JourneyEnvironment | null;
 }
 
 const EVENT_META: Record<
@@ -110,6 +127,15 @@ export const ProductsShow = () => {
 
   // Processing journey — which stage, by whom, where, when (per event).
   const [journey, setJourney] = useState<JourneyEvent[] | null>(null);
+  // Expanded rows (section + environment dropdown per stage step).
+  const [expandedIdx, setExpandedIdx] = useState<Set<number>>(new Set());
+  const toggleExpanded = (i: number) =>
+    setExpandedIdx((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
   useEffect(() => {
     if (!record?.id) return;
     let mounted = true;
@@ -256,29 +282,75 @@ export const ProductsShow = () => {
                     {journey.map((e, i) => {
                       const meta = EVENT_META[e.type];
                       const Icon = meta.icon;
+                      const expandable = Boolean(e.section || e.environment);
+                      const isOpen = expandedIdx.has(i);
+                      const env = e.environment;
                       return (
-                        <li
-                          key={`${e.type}-${e.at}-${i}`}
-                          className="flex items-center gap-3 py-2"
-                        >
-                          <Icon className={`size-4 shrink-0 ${meta.cls}`} />
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate font-medium">
-                              {meta.label}
-                              {e.stageName ? ` — ${e.stageName}` : ""}
+                        <li key={`${e.type}-${e.at}-${i}`} className="py-2">
+                          <button
+                            type="button"
+                            disabled={!expandable}
+                            onClick={() => toggleExpanded(i)}
+                            className="flex w-full items-center gap-3 text-left"
+                          >
+                            <Icon className={`size-4 shrink-0 ${meta.cls}`} />
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate font-medium">
+                                {meta.label}
+                                {e.stageName ? ` — ${e.stageName}` : ""}
+                              </span>
+                              <span className="block truncate text-xs text-muted-foreground">
+                                {[
+                                  e.user ? `Kişi: ${e.user}` : null,
+                                  e.location ? `Konum: ${e.location}` : null,
+                                ]
+                                  .filter(Boolean)
+                                  .join(" · ") || "—"}
+                              </span>
                             </span>
-                            <span className="block truncate text-xs text-muted-foreground">
-                              {[
-                                e.user ? `Kişi: ${e.user}` : null,
-                                e.location ? `Konum: ${e.location}` : null,
-                              ]
-                                .filter(Boolean)
-                                .join(" · ") || "—"}
+                            <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                              {new Date(e.at).toLocaleString()}
                             </span>
-                          </span>
-                          <span className="shrink-0 font-mono text-xs text-muted-foreground">
-                            {new Date(e.at).toLocaleString()}
-                          </span>
+                            {expandable &&
+                              (isOpen ? (
+                                <ChevronUp className="size-4 shrink-0 text-muted-foreground" />
+                              ) : (
+                                <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+                              ))}
+                          </button>
+                          {/* Dropdown: WHERE the stage ran (section) + the
+                              temp/humidity over the operation window. */}
+                          {expandable && isOpen && (
+                            <div className="mt-2 space-y-1 rounded-md border bg-muted/30 p-2 text-xs">
+                              {e.section && <div>Bölüm: {e.section}</div>}
+                              {env && (
+                                <>
+                                  <div className="text-muted-foreground">
+                                    Aralık: {new Date(env.from).toLocaleString()}{" "}
+                                    → {new Date(env.to).toLocaleString()}
+                                  </div>
+                                  {env.count > 0 ? (
+                                    <>
+                                      <div>
+                                        Sıcaklık: {env.tempMin ?? "—"}–
+                                        {env.tempMax ?? "—"} °C (ort{" "}
+                                        {env.tempAvg ?? "—"} °C)
+                                      </div>
+                                      <div>
+                                        Nem: %{env.humidityMin ?? "—"}–%
+                                        {env.humidityMax ?? "—"} (ort %
+                                        {env.humidityAvg ?? "—"})
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <div className="text-muted-foreground">
+                                      Bu aralıkta sensör kaydı yok.
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          )}
                         </li>
                       );
                     })}
