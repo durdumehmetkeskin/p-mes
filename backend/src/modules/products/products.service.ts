@@ -125,6 +125,7 @@ export class ProductsService {
       product.order = order;
       // Snapshot the true origin — flow-through re-stamps `stage` later.
       product.originStageName = stage.name;
+      product.originStageId = stage.id;
       return;
     }
 
@@ -132,6 +133,7 @@ export class ProductsService {
       product.stage = null;
       product.process = null;
       product.originStageName = null;
+      product.originStageId = null;
     }
 
     if (dto.orderId) {
@@ -151,11 +153,13 @@ export class ProductsService {
       product.stage = null;
       product.process = null;
       product.originStageName = null;
+      product.originStageId = null;
     } else if (dto.orderId === null) {
       product.order = null;
       product.stage = null;
       product.process = null;
       product.originStageName = null;
+      product.originStageId = null;
     }
   }
 
@@ -495,24 +499,6 @@ export class ProductsService {
       environment?: ({ from: Date; to: Date } & ReadingSummary) | null;
     }> = [];
 
-    events.push({
-      type: 'produced',
-      at: product.producedAt ?? product.createdAt,
-      stageName: product.originStageName ?? product.stage?.name ?? null,
-      user: product.producedByUser?.name ?? null,
-      location: null,
-    });
-
-    if (product.receivedAt) {
-      events.push({
-        type: 'stored',
-        at: product.receivedAt,
-        stageName: null,
-        user: product.receivedByUser?.name ?? null,
-        location: ProductsService.shelfLocation(product),
-      });
-    }
-
     const rows = await this.custody.listForSource(
       CustodyItemType.Product,
       product.id,
@@ -520,9 +506,16 @@ export class ProductsService {
 
     // Where each stage RAN + the temp/humidity while it did: the stage's
     // section reservation gives the location/section; the location's sensor
-    // readings are summarised over the custody window (receive → close).
+    // readings are summarised over the operation window. The ORIGIN
+    // (producing) stage is included — its window = the stage's actual run.
+    const originStageId = product.originStageId ?? product.stageId ?? null;
     const stageIds = [
-      ...new Set(rows.map((r) => r.stageId).filter((s): s is string => !!s)),
+      ...new Set(
+        [
+          ...rows.map((r) => r.stageId),
+          originStageId,
+        ].filter((s): s is string => !!s),
+      ),
     ];
     const reservations = stageIds.length
       ? await this.stages.manager.getRepository(SectionReservation).find({
@@ -532,10 +525,16 @@ export class ProductsService {
         })
       : [];
 
-    for (const r of rows) {
-      const from = r.receivedAt;
-      const to = r.closedAt ?? new Date();
-      const mine = reservations.filter((sr) => sr.stageId === r.stageId);
+    const contextFor = async (
+      stageId: string | null,
+      from: Date,
+      to: Date,
+    ): Promise<{
+      section: string | null;
+      environment: ({ from: Date; to: Date } & ReadingSummary) | null;
+    }> => {
+      if (!stageId) return { section: null, environment: null };
+      const mine = reservations.filter((sr) => sr.stageId === stageId);
       // Prefer a reservation overlapping the operation window, else any of
       // the stage's reservations (times are floating wall-clock; heuristic).
       const overlap = mine.find((sr) => {
@@ -551,29 +550,66 @@ export class ProductsService {
             : Number.POSITIVE_INFINITY;
         return rs < new Date(to).getTime() && re > new Date(from).getTime();
       });
-      const resv = overlap ?? mine[0];
-      const section = resv?.section ?? null;
-      let sectionLabel: string | null = null;
-      let environment:
-        | ({ from: Date; to: Date } & ReadingSummary)
-        | null = null;
-      if (section) {
-        sectionLabel =
-          [
-            section.location?.name ?? section.location?.code,
-            section.name ?? section.code,
-          ]
-            .filter(Boolean)
-            .join(' · ') || null;
-        if (section.locationId) {
-          const series = await this.locationData.getSeries(section.locationId, {
-            from: new Date(from).toISOString(),
-            to: new Date(to).toISOString(),
-            maxPoints: 24,
-          });
-          environment = { from, to, ...series.summary };
-        }
+      const section = (overlap ?? mine[0])?.section ?? null;
+      if (!section) return { section: null, environment: null };
+      const label =
+        [
+          section.location?.name ?? section.location?.code,
+          section.name ?? section.code,
+        ]
+          .filter(Boolean)
+          .join(' · ') || null;
+      let environment: ({ from: Date; to: Date } & ReadingSummary) | null =
+        null;
+      if (section.locationId) {
+        const series = await this.locationData.getSeries(section.locationId, {
+          from: new Date(from).toISOString(),
+          to: new Date(to).toISOString(),
+          maxPoints: 24,
+        });
+        environment = { from, to, ...series.summary };
       }
+      return { section: label, environment };
+    };
+
+    // Produced event — enriched with the ORIGIN stage's section + the
+    // temp/humidity over that stage's actual run window.
+    const producedAt = product.producedAt ?? product.createdAt;
+    const originStage = originStageId
+      ? await this.stages.findOne({
+          where: { id: originStageId },
+          loadEagerRelations: false,
+        })
+      : null;
+    const producedCtx = await contextFor(
+      originStageId,
+      originStage?.startedAt ?? producedAt,
+      originStage?.completedAt ?? producedAt,
+    );
+    events.push({
+      type: 'produced',
+      at: producedAt,
+      stageName: product.originStageName ?? product.stage?.name ?? null,
+      user: product.producedByUser?.name ?? null,
+      location: null,
+      section: producedCtx.section,
+      environment: producedCtx.environment,
+    });
+
+    if (product.receivedAt) {
+      events.push({
+        type: 'stored',
+        at: product.receivedAt,
+        stageName: null,
+        user: product.receivedByUser?.name ?? null,
+        location: ProductsService.shelfLocation(product),
+      });
+    }
+
+    for (const r of rows) {
+      const from = r.receivedAt;
+      const to = r.closedAt ?? new Date();
+      const ctx = await contextFor(r.stageId, from, to);
 
       events.push({
         type: 'received',
@@ -581,8 +617,8 @@ export class ProductsService {
         stageName: r.stageName,
         user: r.user?.name ?? null,
         location: r.warehouseCode,
-        section: sectionLabel,
-        environment,
+        section: ctx.section,
+        environment: ctx.environment,
       });
       if (r.closedAt) {
         events.push({
@@ -594,8 +630,8 @@ export class ProductsService {
           stageName: r.stageName,
           user: r.user?.name ?? null,
           location: null,
-          section: sectionLabel,
-          environment,
+          section: ctx.section,
+          environment: ctx.environment,
         });
       }
     }

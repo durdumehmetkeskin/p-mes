@@ -106,6 +106,12 @@ export class Product extends BaseEntity {
   })
   originStageName: string | null;
 
+  // Id snapshot of the ORIGINAL producing stage (plain column, NO FK — it must
+  // survive stage deletion) so the journey can resolve the production window
+  // and that stage's section reservation even after flow-through re-stamps.
+  @Column({ type: 'uuid', name: 'origin_stage_id', nullable: true })
+  originStageId: string | null;
+
   // Stage that USED this product as an input (stage/stageId above is the stage
   // that PRODUCED it). A product is consumed by at most one stage; stages take
   // products, documents (stage_input attachments), or both.

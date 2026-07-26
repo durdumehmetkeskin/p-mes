@@ -337,6 +337,7 @@ export default function ProductCardScreen() {
                   // Stage steps are ALWAYS expandable — missing reservation/
                   // sensor data is said explicitly instead of hiding the row.
                   const expandable =
+                    e.type === "produced" ||
                     e.type === "received" ||
                     e.type === "processed" ||
                     Boolean(e.section || e.environment);

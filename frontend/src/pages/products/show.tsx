@@ -285,6 +285,7 @@ export const ProductsShow = () => {
                       // Stage steps are ALWAYS expandable — missing data is
                       // stated explicitly instead of hiding the dropdown.
                       const expandable =
+                        e.type === "produced" ||
                         e.type === "received" ||
                         e.type === "processed" ||
                         Boolean(e.section || e.environment);
