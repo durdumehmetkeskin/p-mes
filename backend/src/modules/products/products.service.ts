@@ -525,6 +525,16 @@ export class ProductsService {
         })
       : [];
 
+    // The environment window per stage = the STAGE's actual run
+    // (startedAt → completedAt), not the custody span.
+    const stageRows = stageIds.length
+      ? await this.stages.find({
+          where: { id: In(stageIds) },
+          loadEagerRelations: false,
+        })
+      : [];
+    const stageById = new Map(stageRows.map((s) => [s.id, s]));
+
     const contextFor = async (
       stageId: string | null,
       from: Date,
@@ -576,10 +586,7 @@ export class ProductsService {
     // temp/humidity over that stage's actual run window.
     const producedAt = product.producedAt ?? product.createdAt;
     const originStage = originStageId
-      ? await this.stages.findOne({
-          where: { id: originStageId },
-          loadEagerRelations: false,
-        })
+      ? (stageById.get(originStageId) ?? null)
       : null;
     const producedCtx = await contextFor(
       originStageId,
@@ -618,8 +625,15 @@ export class ProductsService {
       });
       if (r.closedAt) {
         const processed = r.closeAction === CustodyCloseAction.Consumed;
+        // Window = the stage's ACTUAL start → completion dates (custody span
+        // is only the fallback when the stage row is gone).
+        const stg = r.stageId ? stageById.get(r.stageId) : undefined;
         const ctx = processed
-          ? await contextFor(r.stageId, r.receivedAt, r.closedAt)
+          ? await contextFor(
+              r.stageId,
+              stg?.startedAt ?? r.receivedAt,
+              stg?.completedAt ?? r.closedAt,
+            )
           : { section: null, environment: null };
         events.push({
           type: processed ? 'processed' : 'released',
