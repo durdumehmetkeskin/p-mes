@@ -1,11 +1,12 @@
 import { useInvalidate, useList, useNotification } from "@refinedev/core";
 import { eachDayOfInterval, format, isSameDay, parseISO } from "date-fns";
-import { Trash2 } from "lucide-react";
+import { CalendarClock, Loader2, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -15,14 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { axiosInstance } from "@/providers/axios";
-import {
-  DaySlotStrip,
-  fmtWall,
-  SLOT_MS,
-  slotEndTime,
-  slotRuns,
-  slotToTime,
-} from "./day-slot-strip";
+import { fmtWall } from "./day-slot-strip";
 
 interface LocationOpt {
   id: string;
@@ -42,16 +36,16 @@ interface ReservationRow {
   startAt: string | null;
   endAt: string | null;
   sectionId: string;
-  section: { id: string; locationId: string } | null;
+  section: { id: string; locationId: string; code?: string } | null;
   order: { orderNumber: string } | null;
 }
 
 /**
- * Reserve a section for this stage with SLOT-LEVEL precision: pick one or
- * more days on the calendar, then toggle individual half-hour boxes — the
- * same hours apply to every picked day (e.g. 09:00–12:00 across three days).
- * Each contiguous run per day is stored as its own reservation row; existing
- * rows of this stage are listed below and can be removed.
+ * Section reservation for this stage — SAME structure as the tool reservation
+ * block: pick location + section, a start/end day on the calendar (range) and
+ * a start/end time. The whole continuous span is stored as ONE reservation
+ * row (backend composes startDate+startTime → endDate+endTime). Existing rows
+ * are listed, re-datable and removable.
  */
 export function StageReservation({
   stageId,
@@ -63,8 +57,8 @@ export function StageReservation({
 }: {
   stageId: string;
   orderId: string;
-  /** Process responsible or admin — may also remove reservations without
-   *  the section-reservations:delete key (backend mirrors). */
+  /** Process responsible or admin — may also manage reservations without
+   *  the section-reservations:* keys (backend mirrors). */
   canManage?: boolean;
   /** Stage date window (actuals falling back to estimates). When defined,
    *  the reservation must lie inside it (backend enforces too). */
@@ -82,11 +76,12 @@ export function StageReservation({
 
   const [locationId, setLocationId] = useState("");
   const [sectionId, setSectionId] = useState("");
-  const [days, setDays] = useState<string[]>([]);
-  // Each picked day carries its OWN slot selection (different hours per day).
-  const [slotsByDay, setSlotsByDay] = useState<Record<string, Set<number>>>(
-    {},
-  );
+  // null = creating; a reservation id = re-dating that reservation.
+  const [editId, setEditId] = useState<string | null>(null);
+  // ONE continuous span: a date range + a start and an end time.
+  const [range, setRange] = useState<{ from?: Date; to?: Date }>({});
+  const [startTime, setStartTime] = useState("00:00");
+  const [endTime, setEndTime] = useState("23:59");
   const [busy, setBusy] = useState(false);
 
   const { result: sections } = useList<SectionOpt>({
@@ -96,7 +91,7 @@ export function StageReservation({
     queryOptions: { enabled: Boolean(locationId) },
   });
 
-  // This stage's own reservations (listed + removable below).
+  // This stage's own reservations (listed + re-datable/removable below).
   const { result: mineRes, query: mineQuery } = useList<ReservationRow>({
     resource: "section-reservations",
     filters: [{ field: "stageId", operator: "eq", value: stageId }],
@@ -105,8 +100,8 @@ export function StageReservation({
   });
   const mine = mineRes?.data ?? [];
 
-  // Existing reservations for the chosen section (availability awareness).
-  // Only once a section is picked — an empty sectionId would 400 (uuid).
+  // Existing reservations for the chosen section (availability awareness) —
+  // only the row being re-dated is excluded.
   const { result: existing, query: existingQuery } = useList<ReservationRow>({
     resource: "section-reservations",
     filters: [{ field: "sectionId", operator: "eq", value: sectionId }],
@@ -115,9 +110,12 @@ export function StageReservation({
     queryOptions: { enabled: Boolean(sectionId), retry: false },
     errorNotification: false,
   });
-  const taken = existing?.data ?? [];
+  const taken = useMemo(
+    () => (existing?.data ?? []).filter((r) => r.id !== editId),
+    [existing?.data, editId],
+  );
 
-  // Busy calendar paint (day level; busy days stay SELECTABLE — hours differ).
+  // Day-level paint (busy days stay SELECTABLE — hours may differ).
   const reservedDays = useMemo(() => {
     const out: Date[] = [];
     for (const r of taken) {
@@ -135,65 +133,54 @@ export function StageReservation({
   const isAvailable = (day: Date) =>
     !reservedDays.some((d) => isSameDay(d, day));
 
-  // Effective epoch range per existing reservation (own hours ?? full days).
-  const takenRanges = useMemo(
-    () =>
-      taken.map((r) => ({
-        from: r.startAt
-          ? Date.parse(r.startAt)
-          : Date.parse(`${r.startDate}T00:00:00.000Z`),
-        to: r.endAt
-          ? Date.parse(r.endAt)
-          : Date.parse(`${r.endDate}T00:00:00.000Z`) + 24 * 60 * 60 * 1000,
-      })),
-    [taken],
-  );
-  const busyAt = (dayIso: string) => (slot: number) => {
-    const s = Date.parse(`${dayIso}T00:00:00.000Z`) + slot * SLOT_MS;
-    return takenRanges.some((r) => r.from < s + SLOT_MS && r.to > s);
+  const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+  const startDay = range.from ? format(range.from, "yyyy-MM-dd") : null;
+  const endDay = range.to ? format(range.to, "yyyy-MM-dd") : startDay;
+  const reservedFrom =
+    startDay && TIME_RE.test(startTime)
+      ? Date.parse(`${startDay}T${startTime}:00.000Z`)
+      : Number.NaN;
+  const reservedTo =
+    endDay && TIME_RE.test(endTime)
+      ? Date.parse(`${endDay}T${endTime}:00.000Z`)
+      : Number.NaN;
+  const rangeValid =
+    Number.isFinite(reservedFrom) &&
+    Number.isFinite(reservedTo) &&
+    reservedTo > reservedFrom;
+
+  const canSubmit = Boolean(sectionId) && rangeValid && !busy;
+
+  const resetForm = () => {
+    setEditId(null);
+    setRange({});
+    setStartTime("00:00");
+    setEndTime("23:59");
   };
-  const toggleSlot = (day: string, slot: number) =>
-    setSlotsByDay((prev) => {
-      const next = new Set(prev[day] ?? []);
-      if (next.has(slot)) next.delete(slot);
-      else next.add(slot);
-      return { ...prev, [day]: next };
-    });
 
-  // Contiguous slot runs PER DAY → one reservation range per (day, run).
-  const runsByDay = useMemo(
-    () =>
-      days.map(
-        (d) => [d, slotRuns(slotsByDay[d] ?? new Set())] as const,
-      ),
-    [days, slotsByDay],
-  );
-  const rangeCount = runsByDay.reduce((n, [, r]) => n + r.length, 0);
-
-  const canSubmit =
-    Boolean(locationId && sectionId) && rangeCount > 0 && !busy;
-
-  const reserve = async () => {
-    if (!canSubmit) return;
+  const submit = async () => {
+    if (!canSubmit || !startDay || !endDay) return;
     setBusy(true);
     try {
-      // One POST per (day, contiguous run) — stageId rides along so the
-      // server enforces/syncs the stage window.
-      for (const [day, runs] of runsByDay) {
-        for (const [from, toEx] of runs) {
-          await axiosInstance.post("/section-reservations", {
-            sectionId,
-            orderId,
-            stageId,
-            startDate: day,
-            endDate: day,
-            startTime: slotToTime(from),
-            endTime: slotEndTime(toEx - 1),
-          });
-        }
+      if (editId) {
+        await axiosInstance.patch(`/section-reservations/${editId}`, {
+          startDate: startDay,
+          endDate: endDay,
+          startTime,
+          endTime,
+        });
+      } else {
+        await axiosInstance.post("/section-reservations", {
+          sectionId,
+          orderId,
+          stageId,
+          startDate: startDay,
+          endDate: endDay,
+          startTime,
+          endTime,
+        });
       }
-      setSlotsByDay({});
-      setDays([]);
+      resetForm();
       invalidate({ resource: "section-reservations", invalidates: ["list"] });
       await Promise.all([mineQuery.refetch(), existingQuery.refetch()]);
       onChanged();
@@ -205,6 +192,16 @@ export function StageReservation({
     } finally {
       setBusy(false);
     }
+  };
+
+  // Re-date an existing row: keep its section, prefill range + times.
+  const startEdit = (r: ReservationRow) => {
+    setEditId(r.id);
+    if (r.section?.locationId) setLocationId(r.section.locationId);
+    setSectionId(r.sectionId);
+    setRange({ from: parseISO(r.startDate), to: parseISO(r.endDate) });
+    setStartTime(r.startAt ? r.startAt.slice(11, 16) : "00:00");
+    setEndTime(r.endAt ? r.endAt.slice(11, 16) : "23:59");
   };
 
   const removeReservation = async (id: string) => {
@@ -220,27 +217,49 @@ export function StageReservation({
 
   return (
     <div className="space-y-3 rounded-md border p-3">
-      <Label className="text-sm font-medium">Section reservation</Label>
+      <div className="flex items-center gap-2">
+        <Label className="text-sm font-medium">
+          {editId ? "Re-date reservation" : "Section reservation"}
+        </Label>
+        {editId && (
+          <Button size="sm" variant="ghost" onClick={resetForm}>
+            Cancel edit
+          </Button>
+        )}
+      </div>
 
       {/* This stage's current reservations. */}
       {mine.length > 0 && (
         <ul className="space-y-1">
           {mine.map((r) => (
             <li key={r.id} className="flex items-center gap-2 text-xs">
-              <Badge variant="outline">Reserved</Badge>
+              <Badge variant="outline">
+                {r.section?.code ?? "Reserved"}
+              </Badge>
               <span>
                 {fmtWall(r.startAt, r.startDate)} →{" "}
                 {fmtWall(r.endAt, r.endDate)}
               </span>
               {canManage && (
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-6 w-6"
-                  onClick={() => void removeReservation(r.id)}
-                >
-                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                </Button>
+                <>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-6 w-6"
+                    title="Re-date reservation"
+                    onClick={() => startEdit(r)}
+                  >
+                    <CalendarClock className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-6 w-6"
+                    onClick={() => void removeReservation(r.id)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                  </Button>
+                </>
               )}
             </li>
           ))}
@@ -256,6 +275,7 @@ export function StageReservation({
               setLocationId(v);
               setSectionId("");
             }}
+            disabled={Boolean(editId)}
           >
             <SelectTrigger>
               <SelectValue placeholder="Select location" />
@@ -274,7 +294,7 @@ export function StageReservation({
           <Select
             value={sectionId}
             onValueChange={setSectionId}
-            disabled={!locationId}
+            disabled={!locationId || Boolean(editId)}
           >
             <SelectTrigger>
               <SelectValue
@@ -293,7 +313,7 @@ export function StageReservation({
       </div>
 
       {sectionId && (
-        <div className="space-y-2">
+        <>
           <div className="flex items-center gap-4 text-xs">
             <span className="flex items-center gap-1">
               <span className="inline-block h-3 w-3 rounded border border-green-400 bg-green-100" />
@@ -305,21 +325,12 @@ export function StageReservation({
             </span>
           </div>
           <Calendar
-            mode="multiple"
-            selected={days.map((d) => parseISO(d))}
-            onSelect={(sel) => {
-              const next = (sel ?? [])
-                .map((d) => format(d, "yyyy-MM-dd"))
-                .sort();
-              setDays(next);
-              // Drop slot selections of unpicked days.
-              setSlotsByDay((prev) =>
-                Object.fromEntries(
-                  Object.entries(prev).filter(([d]) => next.includes(d)),
-                ),
-              );
-            }}
-            defaultMonth={windowStart ? parseISO(windowStart) : undefined}
+            mode="range"
+            selected={{ from: range.from, to: range.to }}
+            onSelect={(sel) => setRange({ from: sel?.from, to: sel?.to })}
+            defaultMonth={
+              range.from ?? (windowStart ? parseISO(windowStart) : undefined)
+            }
             disabled={
               windowStart && windowEnd
                 ? [
@@ -336,55 +347,68 @@ export function StageReservation({
             className="rounded-md border"
           />
           <p className="text-[10px] text-muted-foreground">
-            Takvimden bir veya birden fazla gün seçin; her günün saat kutuları
-            AYRI ayrı seçilir.
+            Takvimden başlangıç ve bitiş gününü seçin; aşağıya başlangıç ve
+            bitiş saatini girin. Bölüm bu aralıktaki TÜM saatlerde rezerve
+            sayılır.
           </p>
-        </div>
-      )}
 
-      {/* Per-day half-hour boxes: each picked day gets its OWN grid. */}
-      {sectionId && days.length > 0 && (
-        <div className="space-y-3">
-          {days.map((day) => (
-            <DaySlotStrip
-              key={day}
-              label={`Saat kutuları · ${day}`}
-              isBusy={busyAt(day)}
-              selected={slotsByDay[day] ?? new Set()}
-              onToggle={(slot) => toggleSlot(day, slot)}
-            />
-          ))}
-          <p className="text-[10px] text-muted-foreground">
-            Kutulara tek tek dokunarak seçin/bırakın — her gün için farklı
-            saatler seçilebilir. Kırmızı kutular o gün dolu, alınamaz.
-          </p>
-        </div>
-      )}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs">Başlangıç saati</Label>
+              <Input
+                type="time"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+                className="h-8"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs">Bitiş saati</Label>
+              <Input
+                type="time"
+                value={endTime}
+                onChange={(e) => setEndTime(e.target.value)}
+                className="h-8"
+              />
+            </div>
+          </div>
 
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-xs text-muted-foreground">
-          {rangeCount > 0
-            ? `${days.length} gün · toplam ${rangeCount} saat aralığı = ${rangeCount} rezervasyon`
-            : windowStart && windowEnd
-              ? `Rezervasyon aşamanın tarih aralığında olmalı (${windowStart} → ${windowEnd}).`
-              : "Gün(ler) ve saat kutularını seçin."}
-        </span>
-        <Button size="sm" disabled={!canSubmit} onClick={() => void reserve()}>
-          {busy ? "Saving..." : "Reserve section"}
-        </Button>
-      </div>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-muted-foreground">
+              {rangeValid
+                ? `${startDay} ${startTime} → ${endDay} ${endTime}`
+                : windowStart && windowEnd
+                  ? `Rezervasyon aşamanın tarih aralığında olmalı (${windowStart} → ${windowEnd}).`
+                  : "Takvimden gün(ler) seçin ve saatleri girin."}
+            </span>
+            <Button size="sm" disabled={!canSubmit} onClick={() => void submit()}>
+              {busy ? (
+                <>
+                  <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                  Saving…
+                </>
+              ) : editId ? (
+                "Update reservation"
+              ) : (
+                "Reserve section"
+              )}
+            </Button>
+          </div>
 
-      {taken.length > 0 && (
-        <ul className="text-xs text-muted-foreground">
-          {taken.map((r) => (
-            <li key={r.id}>
-              <Badge variant="outline" className="mr-1">
-                {r.order?.orderNumber ?? "—"}
-              </Badge>
-              {fmtWall(r.startAt, r.startDate)} → {fmtWall(r.endAt, r.endDate)}
-            </li>
-          ))}
-        </ul>
+          {taken.length > 0 && (
+            <ul className="text-xs text-muted-foreground">
+              {taken.map((r) => (
+                <li key={r.id}>
+                  <Badge variant="outline" className="mr-1">
+                    {r.order?.orderNumber ?? "—"}
+                  </Badge>
+                  {fmtWall(r.startAt, r.startDate)} →{" "}
+                  {fmtWall(r.endAt, r.endDate)}
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
       )}
     </div>
   );

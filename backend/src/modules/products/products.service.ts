@@ -607,25 +607,22 @@ export class ProductsService {
     }
 
     for (const r of rows) {
-      const from = r.receivedAt;
-      const to = r.closedAt ?? new Date();
-      const ctx = await contextFor(r.stageId, from, to);
-
+      // Pickup rows stay plain — section + environment belong to the
+      // PROCESSING itself (the 'processed' event) per the requirement.
       events.push({
         type: 'received',
         at: r.receivedAt,
         stageName: r.stageName,
         user: r.user?.name ?? null,
         location: r.warehouseCode,
-        section: ctx.section,
-        environment: ctx.environment,
       });
       if (r.closedAt) {
+        const processed = r.closeAction === CustodyCloseAction.Consumed;
+        const ctx = processed
+          ? await contextFor(r.stageId, r.receivedAt, r.closedAt)
+          : { section: null, environment: null };
         events.push({
-          type:
-            r.closeAction === CustodyCloseAction.Consumed
-              ? 'processed'
-              : 'released',
+          type: processed ? 'processed' : 'released',
           at: r.closedAt,
           stageName: r.stageName,
           user: r.user?.name ?? null,

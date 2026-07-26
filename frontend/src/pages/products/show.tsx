@@ -286,7 +286,6 @@ export const ProductsShow = () => {
                       // stated explicitly instead of hiding the dropdown.
                       const expandable =
                         e.type === "produced" ||
-                        e.type === "received" ||
                         e.type === "processed" ||
                         Boolean(e.section || e.environment);
                       const isOpen = expandedIdx.has(i);
