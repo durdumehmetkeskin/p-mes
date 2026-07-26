@@ -282,7 +282,12 @@ export const ProductsShow = () => {
                     {journey.map((e, i) => {
                       const meta = EVENT_META[e.type];
                       const Icon = meta.icon;
-                      const expandable = Boolean(e.section || e.environment);
+                      // Stage steps are ALWAYS expandable — missing data is
+                      // stated explicitly instead of hiding the dropdown.
+                      const expandable =
+                        e.type === "received" ||
+                        e.type === "processed" ||
+                        Boolean(e.section || e.environment);
                       const isOpen = expandedIdx.has(i);
                       const env = e.environment;
                       return (
@@ -323,7 +328,13 @@ export const ProductsShow = () => {
                               temp/humidity over the operation window. */}
                           {expandable && isOpen && (
                             <div className="mt-2 space-y-1 rounded-md border bg-muted/30 p-2 text-xs">
-                              {e.section && <div>Bölüm: {e.section}</div>}
+                              {e.section ? (
+                                <div>Bölüm: {e.section}</div>
+                              ) : (
+                                <div className="text-muted-foreground">
+                                  Bu aşama için bölüm rezervasyonu yok.
+                                </div>
+                              )}
                               {env && (
                                 <>
                                   <div className="text-muted-foreground">

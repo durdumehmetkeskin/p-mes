@@ -334,7 +334,12 @@ export default function ProductCardScreen() {
               <View className="mt-1">
                 {journey.map((e, i) => {
                   const meta = EVENT_META[e.type];
-                  const expandable = Boolean(e.section || e.environment);
+                  // Stage steps are ALWAYS expandable — missing reservation/
+                  // sensor data is said explicitly instead of hiding the row.
+                  const expandable =
+                    e.type === "received" ||
+                    e.type === "processed" ||
+                    Boolean(e.section || e.environment);
                   const isOpen = expandedIdx.has(i);
                   const env = e.environment;
                   return (
@@ -395,7 +400,11 @@ export default function ProductCardScreen() {
                             <Text className="text-xs text-foreground">
                               Bölüm: {e.section}
                             </Text>
-                          ) : null}
+                          ) : (
+                            <Text className="text-xs text-muted-foreground">
+                              Bu aşama için bölüm rezervasyonu yok.
+                            </Text>
+                          )}
                           {env ? (
                             <>
                               <Text className="text-xs text-muted-foreground">
