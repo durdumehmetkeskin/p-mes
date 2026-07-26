@@ -302,7 +302,8 @@ export const ProductsShow = () => {
                               <span className="block truncate text-xs text-muted-foreground">
                                 {[
                                   e.user ? `Kişi: ${e.user}` : null,
-                                  e.location ? `Konum: ${e.location}` : null,
+                                  e.section ? `Bölüm: ${e.section}` : null,
+                                  e.location ? `Raf: ${e.location}` : null,
                                 ]
                                   .filter(Boolean)
                                   .join(" · ") || "—"}

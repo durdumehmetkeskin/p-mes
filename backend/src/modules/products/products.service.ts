@@ -594,6 +594,8 @@ export class ProductsService {
           stageName: r.stageName,
           user: r.user?.name ?? null,
           location: null,
+          section: sectionLabel,
+          environment,
         });
       }
     }
