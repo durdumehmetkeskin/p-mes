@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import type { Readable } from 'stream';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import { CustodyService } from '../custody/custody.service';
 import { CustodyCloseAction } from '../custody/enums/custody-close-action.enum';
 import { CustodyItemType } from '../custody/enums/custody-item-type.enum';
@@ -517,9 +517,17 @@ export class ProductsService {
         ].filter((s): s is string => !!s),
       ),
     ];
-    const reservations = stageIds.length
+    // Stage-linked reservations + the order's UNLINKED (order-level) rows —
+    // the latter serve as a window-overlap fallback when a stage was worked
+    // without formally binding its reservation.
+    const reservationWhere: Array<Record<string, unknown>> = [];
+    if (stageIds.length) reservationWhere.push({ stageId: In(stageIds) });
+    if (product.orderId) {
+      reservationWhere.push({ orderId: product.orderId, stageId: IsNull() });
+    }
+    const reservations = reservationWhere.length
       ? await this.stages.manager.getRepository(SectionReservation).find({
-          where: { stageId: In(stageIds) },
+          where: reservationWhere,
           relations: { section: { location: true } },
           loadEagerRelations: false,
         })
@@ -544,10 +552,7 @@ export class ProductsService {
       environment: ({ from: Date; to: Date } & ReadingSummary) | null;
     }> => {
       if (!stageId) return { section: null, environment: null };
-      const mine = reservations.filter((sr) => sr.stageId === stageId);
-      // Prefer a reservation overlapping the operation window, else any of
-      // the stage's reservations (times are floating wall-clock; heuristic).
-      const overlap = mine.find((sr) => {
+      const overlaps = (sr: SectionReservation) => {
         const rs = sr.startAt
           ? new Date(sr.startAt).getTime()
           : sr.startDate
@@ -559,8 +564,15 @@ export class ProductsService {
             ? Date.parse(`${sr.endDate}T00:00:00.000Z`) + 86_400_000
             : Number.POSITIVE_INFINITY;
         return rs < new Date(to).getTime() && re > new Date(from).getTime();
-      });
-      const section = (overlap ?? mine[0])?.section ?? null;
+      };
+      // Prefer the stage's own reservation overlapping the window, else any
+      // of its reservations; fall back to an order-level (unlinked) row that
+      // overlaps the window (times are floating wall-clock; heuristic).
+      const mine = reservations.filter((sr) => sr.stageId === stageId);
+      const orderLevel = reservations.filter((sr) => !sr.stageId);
+      const section =
+        (mine.find(overlaps) ?? mine[0] ?? orderLevel.find(overlaps))
+          ?.section ?? null;
       if (!section) return { section: null, environment: null };
       const label =
         [
